@@ -47,4 +47,63 @@ void kernel_print_string(const char* str) {
     }
 }
 
+void kernel_clean_latest_char(void) {
+    if (term_col > 0) {
+        term_col--;
+    } else if (term_row > 0) {
+        term_row--;
+        term_col = VGA_WIDTH - 1;
+    }
+
+    const size_t index = term_row * VGA_WIDTH + term_col;
+    vga_buffer[index] = (unsigned short)0x0720; 
+
+    if (term_col == 0 && term_row == 0) {
+        return;
+    }
+}
+
+
+struct Time {
+    unsigned char hours;
+    unsigned char minutes;
+    unsigned char seconds;
+    unsigned char hundredths;
+};
+
+struct Time kernel_get_time() {
+    struct Time t;
+
+    __asm__ (
+        "movb $0x00, %%ah;"
+        "int $0x1A;"
+        "movb %%ch, %0;"
+        "movb %%cl, %1;"
+        "movb %%dh, %2;"
+        "movb %%dl, %3;"
+        : "=m" (t.hours), "=m" (t.minutes), "=m" (t.seconds), "=m" (t.hundredths)
+        :
+        : "ah", "ch", "cl", "dh", "dl"
+    );
+
+    return t;
+}
+
+void kernel_exit() {
+    __asm__ (
+        "movb $0x53, %%ah;"
+        "int $0x15;"
+        "jne 1f;"
+
+        "1: movl $0x2000, %%eax;"
+        "outb %%al, $0xB2;"
+        "jne 2f;"
+
+        "2: hlt;"
+        :
+        :
+        : "%eax", "%ah"
+    );
+}
+
 #endif

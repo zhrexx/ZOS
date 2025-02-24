@@ -60,6 +60,18 @@ static void float_to_str(float value, char *str) {
     str[j] = '\0';
 }
 
+void *memcpy(void *dest, const void *src, size_t n) {
+    unsigned char *d = dest;
+    const unsigned char *s = src;
+    while (n--) {
+        *d++ = *s++;
+    }
+    return dest;
+}
+
+int isspace(int c) {
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r');
+}
 
 size_t strlen(const char *s) {
     size_t c = 0;
@@ -68,6 +80,75 @@ size_t strlen(const char *s) {
     }
     return c;
 }
+
+int strcmp(const char *str1, const char *str2) {
+    while (*str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    return (unsigned char)*str1 - (unsigned char)*str2;
+}
+
+int strncmp(const char *str1, const char *str2, size_t n) {
+    while (n-- && *str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    if (n == (size_t)-1) return 0;
+    return (unsigned char)*str1 - (unsigned char)*str2;
+}
+
+char *strdup(const char *str) {
+    size_t len = strlen(str) + 1;
+    char *copy = aarena_alloc(&arena, len);
+    if (copy) {
+        memcpy(copy, str, len);
+    }
+    return copy;
+}
+
+char *strchr(const char *str, int c) {
+    while (*str) {
+        if (*str == c) {
+            return (char *)str;
+        }
+        str++;
+    }
+    return NULL;
+}
+
+char *strtok(char *str, const char *delim) {
+    static char *save_ptr;
+    if (str) save_ptr = str; 
+    if (!save_ptr) return NULL;
+
+    char *start = save_ptr;
+    while (*save_ptr && strchr(delim, *save_ptr)) save_ptr++;
+
+    if (!*save_ptr) return NULL; 
+
+    char *end = save_ptr;
+    while (*end && !strchr(delim, *end)) end++;
+
+    if (*end) *end++ = '\0';
+    save_ptr = end;
+    return start;
+}
+
+
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *)haystack;
+    for (; *haystack; haystack++) {
+        const char *h = haystack, *n = needle;
+        while (*h && *n && (*h == *n)) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char *)haystack;
+    }
+    return NULL;
+}
+
 
 char *str_format(const char *fmt, va_list args) {
     int fmt_index = 0;
@@ -94,6 +175,10 @@ char *str_format(const char *fmt, va_list args) {
                     char temp[32];
                     float_to_str((float)va_arg(args_copy, double), temp);
                     total_length += strlen(temp);
+                    break;
+                } 
+                case 'c': {
+                    total_length += 1;
                     break;
                 }
                 default:
@@ -144,6 +229,10 @@ char *str_format(const char *fmt, va_list args) {
                     }
                     break;
                 }
+                case 'c': {
+                    buffer[buffer_index++] = va_arg(args, int);
+                    break;
+                }
                 default:
                     buffer[buffer_index++] = fmt[fmt_index++];
                     buffer[buffer_index++] = fmt[fmt_index];
@@ -168,6 +257,18 @@ void printf(const char *s, ...) {
     if (fmt) {
         kernel_print_string(fmt);
     }
+}
+
+uint64_t __udivdi3(uint64_t n, uint64_t d) {
+    uint64_t q = 0, r = 0;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((n >> i) & 1);
+        if (r >= d) {
+            r -= d;
+            q |= (1ULL << i);
+        }
+    }
+    return q;
 }
 
 
