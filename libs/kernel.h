@@ -10,7 +10,6 @@ volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 int term_row = 0;
 int term_col = 0;
 unsigned char term_color = 0x07; 
-
 void kernel_clear_screen(void) {
     for (int y = 0; y < VGA_HEIGHT; y++) {
         for (int x = 0; x < VGA_WIDTH; x++) {
@@ -63,6 +62,89 @@ void kernel_clean_latest_char(void) {
     }
 }
 
+static int kernel_strcmp(const char *str1, const char *str2) {
+    while (*str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    return *(const unsigned char*)str1 - *(const unsigned char*)str2;
+}
+
+void kernel_change_color(char *color) {
+    unsigned char col = 0;
+    
+    if (color == NULL) {
+        return;
+    }
+    
+    if (kernel_strcmp(color, "black") == 0) {
+        col = 0x0;
+    } else if (kernel_strcmp(color, "blue") == 0) {
+        col = 0x1;
+    } else if (kernel_strcmp(color, "green") == 0) {
+        col = 0x2;
+    } else if (kernel_strcmp(color, "cyan") == 0) {
+        col = 0x3;
+    } else if (kernel_strcmp(color, "red") == 0) {
+        col = 0x4;
+    } else if (kernel_strcmp(color, "magenta") == 0) {
+        col = 0x5;
+    } else if (kernel_strcmp(color, "brown") == 0) {
+        col = 0x6;
+    } else if (kernel_strcmp(color, "light_gray") == 0) {
+        col = 0x7;
+    } else if (kernel_strcmp(color, "dark_gray") == 0) {
+        col = 0x8;
+    } else if (kernel_strcmp(color, "light_blue") == 0) {
+        col = 0x9;
+    } else if (kernel_strcmp(color, "light_green") == 0) {
+        col = 0xA;
+    } else if (kernel_strcmp(color, "light_cyan") == 0) {
+        col = 0xB;
+    } else if (kernel_strcmp(color, "light_red") == 0) {
+        col = 0xC;
+    } else if (kernel_strcmp(color, "light_magenta") == 0) {
+        col = 0xD;
+    } else if (kernel_strcmp(color, "yellow") == 0) {
+        col = 0xE;
+    } else if (kernel_strcmp(color, "white") == 0) {
+        col = 0xF;
+    } else {
+        col = 0x7;
+    }
+    
+    term_color = col;
+}
+
+void kernel_reset_color() {
+    term_color = 0x7;
+}
+
+const char spinner_chars[] = {'|', '/', '-', '\\'};
+
+void kernel_display_spinner(int row, int col, int frame) {
+    char spinner_char = spinner_chars[frame % 4];
+    
+    int saved_row = term_row;
+    int saved_col = term_col;
+    
+    term_row = row;
+    term_col = col;
+    
+    const size_t index = term_row * VGA_WIDTH + term_col;
+    vga_buffer[index] = (unsigned short)(term_color << 8) | spinner_char;
+    
+    term_row = saved_row;
+    term_col = saved_col;
+}
+
+void kernel_delay(int iterations) {
+    volatile int i;
+    for (i = 0; i < iterations; i++) {}
+}
+
+
+// --------------------------------- TIME ------------------------------------------
 
 struct Time {
     unsigned char hours;

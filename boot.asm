@@ -14,9 +14,7 @@ global _start
 global init_pic
 global init_idt
 global keyboard_handler
-
 extern kernel_main
-extern printf
 
 keyboard_handler:
     pusha
@@ -86,20 +84,16 @@ _start:
     call init_idt
     sti
     call kernel_main
-    mov ebx, [error_string]
-    call printf
     hlt
 
 section .bss
 align 16
 stack_bottom:
-    resb 262144
+    resb 16384
 stack_top:
 
-section .data
+section .data 
 idt_table:      times 256*8 db 0
 idt_pointer:    
     dw (256*8)-1
     dd idt_table
-
-error_string: db "ERROR: OS Halted", 0
