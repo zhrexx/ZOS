@@ -3,7 +3,7 @@ CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -Wall -Wextr
 ASM = nasm
 ASMFLAGS = -f elf32
 
-OBJS = boot.o kernel.o
+OBJS = boot.o kernel.o kernel_interface.o
 
 all: os.iso
 
@@ -15,6 +15,9 @@ kernel.bin: $(OBJS)
 
 boot.o: boot.asm
 	$(ASM) $(ASMFLAGS) boot.asm -o boot.o
+
+kernel_interface.o: kernel_interface.asm 
+	$(ASM) $(ASMFLAGS) kernel_interface.asm -o kernel_interface.o 
 
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
