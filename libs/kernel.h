@@ -9,7 +9,9 @@
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 int term_row = 0;
 int term_col = 0;
-unsigned char term_color = 0x07; 
+unsigned char term_color = 0x07;
+
+
 void kernel_clear_screen(void) {
     for (int y = 0; y < VGA_HEIGHT; y++) {
         for (int x = 0; x < VGA_WIDTH; x++) {
@@ -120,6 +122,8 @@ void kernel_reset_color() {
     term_color = 0x7;
 }
 
+
+
 const char spinner_chars[] = {'|', '/', '-', '\\'};
 
 void kernel_display_spinner(int row, int col, int frame) {
@@ -146,46 +150,69 @@ void kernel_delay(int iterations) {
 
 // --------------------------------- TIME ------------------------------------------
 
-struct Time {
-    unsigned char hours;
-    unsigned char minutes;
-    unsigned char seconds;
-    unsigned char hundredths;
+struct time_info {
+    uint32_t seconds;
+    uint32_t microseconds;
 };
 
-struct Time kernel_get_time() {
-    struct Time t;
-
-    __asm__ (
-        "movb $0x00, %%ah;"
-        "int $0x1A;"
-        "movb %%ch, %0;"
-        "movb %%cl, %1;"
-        "movb %%dh, %2;"
-        "movb %%dl, %3;"
-        : "=m" (t.hours), "=m" (t.minutes), "=m" (t.seconds), "=m" (t.hundredths)
-        :
-        : "ah", "ch", "cl", "dh", "dl"
-    );
-
-    return t;
+void cmos_read(uint8_t reg, uint8_t *value) {
+    asm volatile("outb %%al, $0x70" : : "a" (reg));
+    asm volatile("inb $0x71, %%al" : "=a" (*value));
 }
 
-void kernel_exit() {
-    __asm__ (
-        "movb $0x53, %%ah;"
-        "int $0x15;"
-        "jne 1f;"
+struct time_info kernel_time() {
+    struct time_info time_info;
+    uint8_t seconds, minutes, hours, day, month, year;
+    
+    cmos_read(0x00, &seconds);
+    cmos_read(0x02, &minutes);
+    cmos_read(0x04, &hours);
+    cmos_read(0x07, &day);
+    cmos_read(0x08, &month);
+    cmos_read(0x09, &year);
 
-        "1: movl $0x2000, %%eax;"
-        "outb %%al, $0xB2;"
-        "jne 2f;"
+    uint64_t total_seconds = ((uint64_t)(year - 70) * 31536000) + 
+                             ((uint64_t)(month - 1) * 2628000) + 
+                             ((uint64_t)day * 86400) + 
+                             ((uint64_t)hours * 3600) + 
+                             ((uint64_t)minutes * 60) + 
+                             (uint64_t)seconds;
+    time_info.seconds = (uint32_t)total_seconds;
 
-        "2: hlt;"
-        :
-        :
-        : "%eax", "%ah"
-    );
+    uint16_t pit_counter;
+    asm volatile("inw $0x40, %0" : "=a" (pit_counter));
+    time_info.microseconds = (65536 - pit_counter) * 1000000 / 1193180; 
+
+    return time_info;
+}
+
+// ---------------- Other -------------------------------
+
+uint32_t rand_state = 1;
+
+#define LCG_A 1664525
+#define LCG_C 1013904223
+#define LCG_M (1ULL << 32)
+
+uint32_t kernel_rand() {
+    rand_state = (LCG_A * rand_state + LCG_C) % LCG_M;
+    return rand_state;
+}
+
+uint32_t kernel_rand_range(uint32_t min, uint32_t max) {
+    if (min > max) {
+        uint32_t temp = min;
+        min = max;
+        max = temp;
+    }
+
+    return min + (kernel_rand() % (max - min + 1));
+}
+
+void kernel_panic(char *msg) {
+    kernel_print_string("Kernel Panic: ");
+    kernel_print_string(msg);
+    kernel_print_string("\n");
 }
 
 #endif

@@ -1,9 +1,9 @@
 CC = gcc
-CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -Wall -Wextra -Wno-override-init
+CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -Wall -Wextra -Wno-override-init 
 ASM = nasm
 ASMFLAGS = -f elf32
 
-OBJS = boot.o kernel.o kernel_interface.o
+OBJS = boot.o kernel.o
 
 all: os.iso
 
@@ -15,9 +15,6 @@ kernel.bin: $(OBJS)
 
 boot.o: boot.asm
 	$(ASM) $(ASMFLAGS) boot.asm -o boot.o
-
-kernel_interface.o: kernel_interface.asm 
-	$(ASM) $(ASMFLAGS) kernel_interface.asm -o kernel_interface.o 
 
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
