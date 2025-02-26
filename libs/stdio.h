@@ -152,5 +152,75 @@ char *fgets_dcc(int size) {
     return buffer;
 }
 
+// nb = Non Blocking
+int getchar_nb(void) {
+    if (!(inb(0x64) & 1)) {
+        return -1;
+    }
+    
+    uint8_t scancode = inb(0x60);
+    
+    static char scancode_map[256] = {
+        0,  27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
+        '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
+        0,   'a','s','d','f','g','h','j','k','l',';','\'','`',
+        0,  '\\','z','x','c','v','b','n','m',',','.','/',
+        0,   0,   0,  ' ',
+        0,   0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
+        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
+        0,   0,  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0,  0,  0,  0,  0,  0,
+        [0x2A] = 0, [0x36] = 0, [0x1D] = 0, [0x9D] = 0, [0x38] = 0, [0xB8] = 0
+    };
+    
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift = 1;
+        return 0;
+    }
+    if (scancode == 0xAA || scancode == 0xB6) {
+        shift = 0;
+        return 0;
+    }
+    if (scancode == 0x1D) {
+        ctrl = 1;
+        return 0;
+    }
+    if (scancode == 0x9D) {
+        ctrl = 0;
+        return 0;
+    }
+    if (scancode == 0x38) {
+        alt = 1;
+        return 0;
+    }
+    if (scancode == 0xB8) {
+        alt = 0;
+        return 0;
+    }
+    if (scancode & 0x80) {
+        return 0;
+    }
+    
+    char key = scancode_map[scancode];
+    if (shift) {
+        if (key >= 'a' && key <= 'z') {
+            key -= 32; 
+        } else if (key == '1') {
+            key = '!';
+        } else if (key == '2') {
+            key = '@';
+        } else if (key == '3') {
+            key = '#';
+        }
+    }
+    if (ctrl) {
+        if (key >= 'a' && key <= 'z') {
+            key -= 96;
+        }
+    }
+    
+    return key;
+}
+
 #endif // STDIO_H
 

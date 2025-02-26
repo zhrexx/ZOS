@@ -535,4 +535,38 @@ void kernel_shutdown(void) {
         __asm__ volatile ("hlt");
     }
 }
+
+// TODO: Somehow use str_format
+char *time_format(struct Day* day) {
+    char* buffer = aarena_alloc(&arena, 32);
+    uint8_t pos = 0;
+    uint16_t y = day->year;
+    buffer[pos++] = '0' + (y / 1000);
+    buffer[pos++] = '0' + ((y / 100) % 10);
+    buffer[pos++] = '0' + ((y / 10) % 10);
+    buffer[pos++] = '0' + (y % 10);
+    buffer[pos++] = '-';
+    buffer[pos++] = '0' + (day->month / 10);
+    buffer[pos++] = '0' + (day->month % 10);
+    buffer[pos++] = '-';
+    buffer[pos++] = '0' + (day->day / 10);
+    buffer[pos++] = '0' + (day->day % 10);
+    buffer[pos++] = ' ';
+    buffer[pos++] = '0' + (day->hours / 10);
+    buffer[pos++] = '0' + (day->hours % 10);
+    buffer[pos++] = ':';
+    buffer[pos++] = '0' + (day->minutes / 10);
+    buffer[pos++] = '0' + (day->minutes % 10);
+    buffer[pos++] = ':';
+    buffer[pos++] = '0' + (day->seconds / 10);
+    buffer[pos++] = '0' + (day->seconds % 10);
+    buffer[pos] = '\0';
+    
+    return buffer;
+}
+
+char *time_now() {
+    struct Day now = kernel_localtime(kernel_time().seconds);
+    return time_format(&now);
+}
 #endif

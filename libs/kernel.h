@@ -2,9 +2,10 @@
 #define KERNEL_H 
 
 #include "types.h"
+#include "memory.h"
 
 #define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+#define VGA_HEIGHT 40
 
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 int term_row = 0;
@@ -63,13 +64,12 @@ void kernel_clean_latest_char(void) {
         return;
     }
 }
-
 static int kernel_strcmp(const char *str1, const char *str2) {
     while (*str1 && (*str1 == *str2)) {
         str1++;
         str2++;
     }
-    return *(const unsigned char*)str1 - *(const unsigned char*)str2;
+    return (unsigned char)*str1 - (unsigned char)*str2;
 }
 
 void kernel_change_color(char *color) {
@@ -125,10 +125,8 @@ void kernel_reset_color() {
 
 
 const char spinner_chars[] = {'|', '/', '-', '\\'};
-
 void kernel_display_spinner(int row, int col, int frame) {
     char spinner_char = spinner_chars[frame % 4];
-    
     int saved_row = term_row;
     int saved_col = term_col;
     
@@ -155,14 +153,20 @@ struct time_info {
     uint32_t microseconds;
 };
 
+static uint8_t bcd_to_bin(uint8_t value) {
+    return (value & 0x0F) + ((value >> 4) * 10);
+}
+
 void cmos_read(uint8_t reg, uint8_t *value) {
-    asm volatile("outb %%al, $0x70" : : "a" (reg));
-    asm volatile("inb $0x71, %%al" : "=a" (*value));
+    asm volatile ("cli");
+    asm volatile ("outb %%al, $0x70" : : "a" (reg));
+    asm volatile ("inb $0x71, %%al" : "=a" (*value));
+    asm volatile ("sti");
 }
 
 struct time_info kernel_time() {
     struct time_info time_info;
-    uint8_t seconds, minutes, hours, day, month, year;
+    uint8_t seconds, minutes, hours, day, month, year, status_b;
     
     cmos_read(0x00, &seconds);
     cmos_read(0x02, &minutes);
@@ -170,21 +174,104 @@ struct time_info kernel_time() {
     cmos_read(0x07, &day);
     cmos_read(0x08, &month);
     cmos_read(0x09, &year);
-
-    uint64_t total_seconds = ((uint64_t)(year - 70) * 31536000) + 
-                             ((uint64_t)(month - 1) * 2628000) + 
-                             ((uint64_t)day * 86400) + 
-                             ((uint64_t)hours * 3600) + 
-                             ((uint64_t)minutes * 60) + 
-                             (uint64_t)seconds;
-    time_info.seconds = (uint32_t)total_seconds;
-
+    cmos_read(0x0B, &status_b);
+    
+    if (!(status_b & 0x04)) {
+        seconds = bcd_to_bin(seconds);
+        minutes = bcd_to_bin(minutes);
+        hours = bcd_to_bin(hours);
+        day = bcd_to_bin(day);
+        month = bcd_to_bin(month);
+        year = bcd_to_bin(year);
+    }
+    uint16_t full_year = 2000 + year;
+    uint32_t total_seconds = 0;
+    uint32_t days_since_epoch = 0;
+    for (uint16_t y = 1970; y < full_year; y++) {
+        days_since_epoch += 365 + (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) ? 1 : 0);
+    }
+    
+    static const uint8_t days_in_month[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    for (uint8_t m = 0; m < month - 1; m++) {
+        days_since_epoch += days_in_month[m];
+        if (m == 1 && (full_year % 4 == 0 && (full_year % 100 != 0 || full_year % 400 == 0))) {
+            days_since_epoch += 1;
+        }
+    }
+    
+    days_since_epoch += day - 1;
+    
+    total_seconds = days_since_epoch * 86400 + hours * 3600 + minutes * 60 + seconds;
+    
+    time_info.seconds = total_seconds;
+    
     uint16_t pit_counter;
-    asm volatile("inw $0x40, %0" : "=a" (pit_counter));
-    time_info.microseconds = (65536 - pit_counter) * 1000000 / 1193180; 
-
+    asm volatile ("inb $0x61, %%al" : : ); 
+    asm volatile ("inb $0x42, %%al" : "=a" (pit_counter) : );
+    uint8_t low = (uint8_t)pit_counter;
+    asm volatile ("inb $0x42, %%al" : "=a" (pit_counter) : );
+    uint8_t high = (uint8_t)pit_counter;
+    pit_counter = (high << 8) | low;
+    
+    time_info.microseconds = ((65536 - pit_counter) * 1000000) / 1193182;
+    
     return time_info;
 }
+
+struct Day {
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+};
+
+static int is_leap_year(uint16_t year) {
+    return (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+}
+
+struct Day kernel_localtime(uint32_t timestamp) {
+    struct Day* dt = aarena_alloc(&arena, sizeof(struct Day));
+    uint32_t days = timestamp / 86400;
+    uint32_t remaining_seconds = timestamp % 86400;
+    
+    dt->hours = remaining_seconds / 3600;
+    remaining_seconds %= 3600;
+    dt->minutes = remaining_seconds / 60;
+    dt->seconds = remaining_seconds % 60;
+    
+    uint16_t year = 1970;
+    while (days >= ((uint32_t)(365 + is_leap_year(year)))) {
+        days -= 365 + is_leap_year(year);
+        year++;
+    }
+    dt->year = year;
+    
+    static const uint8_t days_in_month[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    uint8_t month = 0;
+    
+    while (month < 12) {
+        uint8_t mdays = days_in_month[month];
+        if (month == 1 && is_leap_year(year)) {
+            mdays++;
+        }
+        
+        if (days < mdays) {
+            break;
+        }
+        
+        days -= mdays;
+        month++;
+    }
+    
+    dt->month = month + 1;
+    dt->day = days + 1;
+    
+    struct Day result = *dt;
+    return result;
+}
+
 
 // ---------------- Other -------------------------------
 

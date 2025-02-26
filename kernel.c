@@ -1,7 +1,6 @@
 // TODO: FileSystem > Load programs from disk
 // TODO: Drivers
 #include "msstd.h"
-// #include "drivers/mfs.h"
 
 #define K_VERSION "1.0"
 #define K_SHELL_SYMBOL "$ "
@@ -40,6 +39,17 @@ void calculator() {
     printf("Result: %d\n", r);
 }
 
+uint64_t get_cpu_speed(void) {
+    uint64_t start, end;
+    uint64_t cycles;
+    start = rdtsc();
+    for (volatile int i = 0; i < 1000000; i++) {}
+    end = rdtsc();
+    cycles = end - start;
+    return cycles;
+}
+
+
 void shell_run() {
     printf(K_SHELL_SYMBOL);
     char *cmd = fgets_dcc(256);
@@ -53,6 +63,7 @@ void shell_run() {
             kernel_shutdown();
         } else if (strcmp(cmd, "clear") == 0) {
             kernel_clear_screen();
+            printf("ZOS %s\n", K_VERSION);
             kernel_change_color("default");
         } else if (strcmp(cmd, "author") == 0) {
             printf("| Project: ZOS\n| Author: zhrexx\n");
@@ -66,6 +77,10 @@ void shell_run() {
             printf("| color <str> - Set a color   |\n");
             printf("| clear - clears the screen   |\n");
             printf("| exit - shutdowns the PC     |\n");
+        } else if (strcmp(cmd, "infload") == 0) {
+            return;
+        } else if (strcmp(cmd, "time") == 0) {
+            printf("%s\n", time_now());
         } else {
             printf("Unknown Command: %s\n", cmd);
         }
@@ -78,9 +93,21 @@ void kernel_main(unsigned int magic, unsigned int* mboot_info) {
     (void) magic, (void)mboot_info;
     kernel_clear_screen();
     printf("ZOS %s\n", K_VERSION);
+    printf("%s\n", time_now());
     shell_run();
-    
-    while(1) __asm__("hlt");
+    kernel_clear_screen();
+    printf("Infinite Loading\nIf you wanna shutdown click 'q'\n");
+    uint64_t cps = get_cpu_speed();
+    for (size_t i = 0; 1 ;i++) {
+        if (getchar_nb() == 'q') {
+            break;
+        }
+
+        kernel_display_spinner(10, VGA_WIDTH/2-1, i);
+        kernel_delay(cps*2);
+    }
+
+    kernel_shutdown();
 }
 
 

@@ -25,10 +25,3 @@ clean:
 run: os.iso
 	qemu-system-i386 -kernel kernel.bin
 
-img: kernel.bin
-	qemu-img create -f raw zos.img 1G
-	dd if=kernel.bin of=zos.img bs=512 seek=4
-run_img: zos.img
-	qemu-system-i386 -drive file=zos.img,format=raw
-
-
