@@ -4,6 +4,30 @@
 #include "types.h"
 #include "memory.h"
 
+// --------------- State ----------------------------
+typedef struct {
+    // TODO: Do something
+} KernelState;
+
+// --------------- Externs --------------------------
+extern void kernel_panic(const char *msg);
+
+// --------------- Utils ----------------------------
+
+void kernel_delay(int iterations) {
+    volatile int i;
+    for (i = 0; i < iterations; i++) {}
+}
+
+static int kernel_strcmp(const char *str1, const char *str2) {
+    while (*str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    return (unsigned char)*str1 - (unsigned char)*str2;
+}
+
+
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 40
 
@@ -11,7 +35,6 @@ volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 int term_row = 0;
 int term_col = 0;
 unsigned char term_color = 0x07;
-
 
 void kernel_clear_screen(void) {
     for (int y = 0; y < VGA_HEIGHT; y++) {
@@ -58,27 +81,31 @@ void kernel_clean_latest_char(void) {
     }
 
     const size_t index = term_row * VGA_WIDTH + term_col;
-    vga_buffer[index] = (unsigned short)0x0720; 
+    vga_buffer[index] = (unsigned short)0x0720;
 
     if (term_col == 0 && term_row == 0) {
         return;
     }
 }
-static int kernel_strcmp(const char *str1, const char *str2) {
-    while (*str1 && (*str1 == *str2)) {
-        str1++;
-        str2++;
+
+void kernel_clean_latest_line(void) {
+    if (term_row > 0) {
+        term_row--;
+    } else {
+        term_row = 0;
     }
-    return (unsigned char)*str1 - (unsigned char)*str2;
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        const size_t index = term_row * VGA_WIDTH + x;
+        vga_buffer[index] = (unsigned short)0x0720; 
+    }
+    term_col = 0;
 }
 
 void kernel_change_color(char *color) {
     unsigned char col = 0;
-    
     if (color == NULL) {
         return;
     }
-    
     if (kernel_strcmp(color, "black") == 0) {
         col = 0x0;
     } else if (kernel_strcmp(color, "blue") == 0) {
@@ -114,15 +141,12 @@ void kernel_change_color(char *color) {
     } else {
         col = 0x7;
     }
-    
     term_color = col;
 }
 
 void kernel_reset_color() {
     term_color = 0x7;
 }
-
-
 
 const char spinner_chars[] = {'|', '/', '-', '\\'};
 void kernel_display_spinner(int row, int col, int frame) {
@@ -140,11 +164,26 @@ void kernel_display_spinner(int row, int col, int frame) {
     term_col = saved_col;
 }
 
-void kernel_delay(int iterations) {
-    volatile int i;
-    for (i = 0; i < iterations; i++) {}
+
+
+//--------------------------------- Hardware ------------------------------------
+
+static void cpuid(uint32_t code, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+    asm volatile (
+        "cpuid"
+        : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d)
+        : "a"(code)
+    );
 }
 
+void kernel_cpu_get_info(char *vendor) {
+    uint32_t a, b, c, d;
+    cpuid(0, &a, &b, &c, &d);
+    *(uint32_t *)(vendor)     = b;
+    *(uint32_t *)(vendor + 4) = d;
+    *(uint32_t *)(vendor + 8) = c;
+    vendor[12] = '\0';
+}
 
 // --------------------------------- TIME ------------------------------------------
 
@@ -273,7 +312,7 @@ struct Day kernel_localtime(uint32_t timestamp) {
 }
 
 
-// ---------------- Other -------------------------------
+// ---------------- Random -------------------------------
 
 uint32_t rand_state = 1;
 
@@ -282,7 +321,8 @@ uint32_t rand_state = 1;
 #define LCG_M (1ULL << 32)
 
 uint32_t kernel_rand() {
-    rand_state = (LCG_A * rand_state + LCG_C) % LCG_M;
+    uint32_t t = kernel_time().seconds;
+    rand_state = (LCG_A * rand_state + LCG_C + (t%2)/2) % LCG_M;
     return rand_state;
 }
 
@@ -296,10 +336,54 @@ uint32_t kernel_rand_range(uint32_t min, uint32_t max) {
     return min + (kernel_rand() % (max - min + 1));
 }
 
-void kernel_panic(char *msg) {
-    kernel_print_string("Kernel Panic: ");
-    kernel_print_string(msg);
-    kernel_print_string("\n");
+// ------------------- Critical / System ------------------------------
+
+void kernel_shutdown(void) {
+    __asm__ volatile (
+        "mov $0x2000, %%ax\n\t"
+        "mov $0x604, %%dx\n\t"
+        "out %%ax, %%dx\n\t"
+        :
+        :
+        : "ax", "dx"
+    );
+    __asm__ volatile (
+        "mov $0x5307, %%ax\n\t"
+        "mov $0xb2, %%dx\n\t"
+        "out %%ax, %%dx\n\t"
+        :
+        :
+        : "ax", "dx"
+    );
+    __asm__ volatile (
+        "1:\n\t"
+        "in $0x64, %%al\n\t"
+        "test $0x02, %%al\n\t"
+        "jnz 1b\n\t"
+        "mov $0xd1, %%al\n\t"
+        "out %%al, $0x64\n\t"
+        "2:\n\t"
+        "in $0x64, %%al\n\t"
+        "test $0x02, %%al\n\t"
+        "jnz 2b\n\t"
+        "mov $0xfe, %%al\n\t"
+        "out %%al, $0x60\n\t"
+        :
+        :
+        : "al"
+    );
+
+    __asm__ volatile (
+        "cli\n\t"
+        "hlt\n\t"
+        :
+        :
+        :
+    );
+
+    while (1) {
+        __asm__ volatile ("hlt");
+    }
 }
 
 #endif

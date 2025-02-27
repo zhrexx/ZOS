@@ -181,6 +181,34 @@ char *strstr(const char *haystack, const char *needle) {
     return NULL;
 }
 
+char *strcpy(char *dest, const char *src) {
+    char *original_dest = dest;
+
+    while (*src != '\0') {
+        *dest = *src;
+        dest++;
+        src++;
+    }
+
+    *dest = '\0';
+    return original_dest;
+}
+
+char *strncpy(char *dest, const char *src, size_t n) {
+    char *original_dest = dest;
+    while (n-- > 0 && *src != '\0') {
+        *dest = *src;
+        dest++;
+        src++;
+    }
+    while (n-- > 0) {
+        *dest = '\0';
+        dest++;
+    }
+    return original_dest;
+}
+
+
 static void int_to_str(int num, char* buf) {
     int i = 0;
     if (num == 0) {
@@ -193,7 +221,14 @@ static void int_to_str(int num, char* buf) {
         buf[i++] = (num % 10) + '0';
         num /= 10;
     }
-    if (i > 1) {
+    buf[i] = '\0';
+    if (i > 1 && buf[0] == '-') {
+        for (int j = 1; j < i / 2 + 1; j++) {
+            char temp = buf[j];
+            buf[j] = buf[i - j];
+            buf[i - j] = temp;
+        }
+    } else if (i > 1) {
         for (int j = 0; j < i / 2; j++) {
             char temp = buf[j];
             buf[j] = buf[i - j - 1];
@@ -214,7 +249,14 @@ static void long_long_to_str(long long num, char* buf) {
         buf[i++] = (num % 10) + '0';
         num /= 10;
     }
-    if (i > 1) {
+    buf[i] = '\0';
+    if (i > 1 && buf[0] == '-') {
+        for (int j = 1; j < i / 2 + 1; j++) {
+            char temp = buf[j];
+            buf[j] = buf[i - j];
+            buf[i - j] = temp;
+        }
+    } else if (i > 1) {
         for (int j = 0; j < i / 2; j++) {
             char temp = buf[j];
             buf[j] = buf[i - j - 1];
@@ -232,6 +274,7 @@ static void unsigned_long_to_str(unsigned long num, char* buf) {
         buf[i++] = (num % 10) + '0';
         num /= 10;
     }
+    buf[i] = '\0';
     if (i > 0) {
         for (int j = 0; j < i / 2; j++) {
             char temp = buf[j];
@@ -250,6 +293,7 @@ static void unsigned_int_to_str(unsigned int num, char* buf) {
         buf[i++] = (num % 10) + '0';
         num /= 10;
     }
+    buf[i] = '\0';
     if (i > 0) {
         for (int j = 0; j < i / 2; j++) {
             char temp = buf[j];
@@ -259,18 +303,45 @@ static void unsigned_int_to_str(unsigned int num, char* buf) {
     }
 }
 
-static void float_to_str(float num, char* buf) {
+static void float_to_str(float num, char* buf, int precision) {
     int i = 0;
     if (num < 0) {
         buf[i++] = '-';
         num = -num;
     }
     int integer_part = (int)num;
-    int_to_str(integer_part, buf);
+    int_to_str(integer_part, buf + i);
     i = strlen(buf);
     buf[i++] = '.';
     float fractional_part = num - integer_part;
-    for (int j = 0; j < 2; j++) {
+    
+    if (precision <= 0) precision = 2; 
+    
+    for (int j = 0; j < precision; j++) {
+        fractional_part *= 10;
+        int digit = (int)fractional_part;
+        buf[i++] = digit + '0';
+        fractional_part -= digit;
+    }
+    buf[i] = '\0';
+}
+
+static void double_to_str(double num, char* buf, int precision) {
+    int i = 0;
+    if (num < 0) {
+        buf[i++] = '-';
+        num = -num;
+    }
+    
+    unsigned long long integer_part = (unsigned long long)num;
+    unsigned_long_to_str(integer_part, buf + i);
+    i = strlen(buf);
+    buf[i++] = '.';
+    double fractional_part = num - integer_part;
+    
+    if (precision <= 0) precision = 6;  
+    
+    for (int j = 0; j < precision; j++) {
         fractional_part *= 10;
         int digit = (int)fractional_part;
         buf[i++] = digit + '0';
@@ -284,6 +355,14 @@ static void pointer_to_str(void* ptr, char* buf) {
     int i = 0;
     buf[i++] = '0';
     buf[i++] = 'x';
+    
+    if (address == 0) {
+        buf[i++] = '0';
+        buf[i] = '\0';
+        return;
+    }
+    
+    int start_pos = i;
     while (address > 0) {
         unsigned char byte = address & 0xf;
         if (byte < 10) {
@@ -293,10 +372,114 @@ static void pointer_to_str(void* ptr, char* buf) {
         }
         address >>= 4;
     }
-    for (int j = 2; j < i / 2; j++) {
+    buf[i] = '\0';
+    
+    int end_pos = i - 1;
+    while (start_pos < end_pos) {
+        char temp = buf[start_pos];
+        buf[start_pos] = buf[end_pos];
+        buf[end_pos] = temp;
+        start_pos++;
+        end_pos--;
+    }
+}
+
+static void int_to_hex_str(unsigned int num, char* buf, int uppercase) {
+    int i = 0;
+    if (num == 0) {
+        buf[i++] = '0';
+        buf[i] = '\0';
+        return;
+    }
+    
+    while (num > 0) {
+        unsigned char digit = num & 0xf;
+        if (digit < 10) {
+            buf[i++] = digit + '0';
+        } else {
+            buf[i++] = digit - 10 + (uppercase ? 'A' : 'a');
+        }
+        num >>= 4;
+    }
+    buf[i] = '\0';
+    
+    for (int j = 0; j < i / 2; j++) {
         char temp = buf[j];
         buf[j] = buf[i - j - 1];
         buf[i - j - 1] = temp;
+    }
+}
+
+static void int_to_oct_str(unsigned int num, char* buf) {
+    int i = 0;
+    if (num == 0) {
+        buf[i++] = '0';
+        buf[i] = '\0';
+        return;
+    }
+    
+    while (num > 0) {
+        buf[i++] = (num & 7) + '0';
+        num >>= 3;
+    }
+    buf[i] = '\0';
+    
+    for (int j = 0; j < i / 2; j++) {
+        char temp = buf[j];
+        buf[j] = buf[i - j - 1];
+        buf[i - j - 1] = temp;
+    }
+}
+
+static void int_to_bin_str(unsigned int num, char* buf) {
+    int i = 0;
+    if (num == 0) {
+        buf[i++] = '0';
+        buf[i] = '\0';
+        return;
+    }
+    
+    while (num > 0) {
+        buf[i++] = (num & 1) + '0';
+        num >>= 1;
+    }
+    buf[i] = '\0';
+    
+    for (int j = 0; j < i / 2; j++) {
+        char temp = buf[j];
+        buf[j] = buf[i - j - 1];
+        buf[i - j - 1] = temp;
+    }
+}
+
+static int parse_int_from_fmt(const char* fmt, int* i) {
+    int value = 0;
+    while (fmt[*i] >= '0' && fmt[*i] <= '9') {
+        value = value * 10 + (fmt[*i] - '0');
+        (*i)++;
+    }
+    return value;
+}
+
+static void apply_padding(char* dest, const char* src, int width, int left_justify, char pad_char) {
+    int len = strlen(src);
+    if (width <= len) {
+        strcpy(dest, src);
+        return;
+    }
+    
+    if (left_justify) {
+        strcpy(dest, src);
+        for (int i = len; i < width; i++) {
+            dest[i] = pad_char;
+        }
+        dest[width] = '\0';
+    } else {
+        int pad_count = width - len;
+        for (int i = 0; i < pad_count; i++) {
+            dest[i] = pad_char;
+        }
+        strcpy(dest + pad_count, src);
     }
 }
 
@@ -307,67 +490,187 @@ char* str_format(const char* fmt, va_list args) {
     va_list args_copy;
     va_copy(args_copy, args);
 
-    while (fmt[fmt_index]!= '\0') {
-        if (fmt[fmt_index] == '%' && fmt[fmt_index + 1]!= '\0') {
-            switch (fmt[fmt_index + 1]) {
+    while (fmt[fmt_index] != '\0') {
+        if (fmt[fmt_index] == '%' && fmt[fmt_index + 1] != '\0') {
+            fmt_index++;
+            
+            int left_justify = 0;
+            char pad_char = ' ';
+            
+            if (fmt[fmt_index] == '-') {
+                left_justify = 1;
+                fmt_index++;
+            }
+            
+            if (fmt[fmt_index] == '0' && !left_justify) {
+                pad_char = '0';
+                fmt_index++;
+            }
+            
+            int width = 0;
+            if (fmt[fmt_index] >= '0' && fmt[fmt_index] <= '9') {
+                width = parse_int_from_fmt(fmt, &fmt_index);
+            } else if (fmt[fmt_index] == '*') {
+                width = va_arg(args_copy, int);
+                if (width < 0) {
+                    width = -width;
+                    left_justify = 1;
+                }
+                fmt_index++;
+            }
+            
+            int precision = -1;
+            if (fmt[fmt_index] == '.') {
+                fmt_index++;
+                if (fmt[fmt_index] == '*') {
+                    precision = va_arg(args_copy, int);
+                    fmt_index++;
+                } else {
+                    precision = parse_int_from_fmt(fmt, &fmt_index);
+                }
+            }
+            
+            // Length modifiers
+            int length_mod = 0;  // 0 = none, 1 = h, 2 = l, 3 = ll, 4 = L
+            if (fmt[fmt_index] == 'h') {
+                length_mod = 1;
+                fmt_index++;
+                if (fmt[fmt_index] == 'h') {
+                    fmt_index++;
+                }
+            } else if (fmt[fmt_index] == 'l') {
+                length_mod = 2;
+                fmt_index++;
+                if (fmt[fmt_index] == 'l') {
+                    length_mod = 3;  // long long
+                    fmt_index++;
+                }
+            } else if (fmt[fmt_index] == 'L') {
+                length_mod = 4;  // long double
+                fmt_index++;
+            }
+            
+            switch (fmt[fmt_index]) {
                 case's': {
                     char* arg = va_arg(args_copy, char*);
-                    total_length += strlen(arg);
+                    if (arg == NULL) arg = "(null)";
+                    int len = strlen(arg);
+                    if (precision >= 0 && precision < len) {
+                        len = precision;
+                    }
+                    total_length += (width > len) ? width : len;
                     break;
                 }
-                case 'd': {
-                    char temp[20];
-                    int_to_str(va_arg(args_copy, int), temp);
-                    total_length += strlen(temp);
+                case 'd':
+                case 'i': {
+                    char temp[32];
+                    long long value;
+                    
+                    if (length_mod == 3) {         // long long
+                        value = va_arg(args_copy, long long);
+                        long_long_to_str(value, temp);
+                    } else if (length_mod == 2) {  // long
+                        value = va_arg(args_copy, long);
+                        long_long_to_str(value, temp);
+                    } else {                        // int or default
+                        value = va_arg(args_copy, int);
+                        int_to_str(value, temp);
+                    }
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
                     break;
                 }
                 case 'f': {
-                    char temp[32];
-                    float_to_str((float)va_arg(args_copy, double), temp);
-                    total_length += strlen(temp);
+                    char temp[64];
+                    if (length_mod == 4) {  // long double
+                        double_to_str(va_arg(args_copy, long double), temp, precision);
+                    } else {
+                        float_to_str((float)va_arg(args_copy, double), temp, precision);
+                    }
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
+                    break;
+                }
+                case 'g':
+                case 'e': {
+                    char temp[64];
+                    float_to_str((float)va_arg(args_copy, double), temp, precision);
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
                     break;
                 }
                 case 'c': {
-                    total_length += 1;
+                    va_arg(args_copy, int); // consume
+                    total_length += (width > 1) ? width : 1;
                     break;
                 }
                 case 'p': {
-                    char temp[20];
+                    char temp[32];
                     pointer_to_str(va_arg(args_copy, void*), temp);
-                    total_length += strlen(temp);
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
                     break;
                 }
-                case 'l': {
-                    if (fmt[fmt_index + 2] == 'l') {
-                        char temp[20];
-                        long_long_to_str(va_arg(args_copy, long long), temp);
-                        total_length += strlen(temp);
-                        fmt_index += 2;
+                case 'x':
+                case 'X': {
+                    char temp[32];
+                    int uppercase = (fmt[fmt_index] == 'X');
+                    
+                    if (length_mod == 2) {  // long
+                        unsigned long value = va_arg(args_copy, unsigned long);
+                        int_to_hex_str((unsigned int)value, temp, uppercase);
                     } else {
-                        if (fmt[fmt_index + 2] == 'd') {
-                            char temp[20];
-                            long_long_to_str(va_arg(args_copy, long long), temp);
-                            total_length += strlen(temp);
-                        } else if (fmt[fmt_index + 2] == 'u') {
-                            char temp[20];
-                            unsigned_long_to_str(va_arg(args_copy, unsigned long), temp);
-                            total_length += strlen(temp);
-                        }
-                        fmt_index += 2;
+                        int_to_hex_str(va_arg(args_copy, unsigned int), temp, uppercase);
                     }
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
+                    break;
+                }
+                case 'o': {
+                    char temp[32];
+                    int_to_oct_str(va_arg(args_copy, unsigned int), temp);
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
+                    break;
+                }
+                case 'b': {  // Custom format: binary
+                    char temp[64];
+                    int_to_bin_str(va_arg(args_copy, unsigned int), temp);
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
                     break;
                 }
                 case 'u': {
-                    char temp[20];
-                    unsigned_int_to_str(va_arg(args_copy, unsigned int), temp);
-                    total_length += strlen(temp);
+                    char temp[32];
+                    if (length_mod == 3) {  // unsigned long long
+                        unsigned long value = va_arg(args_copy, unsigned long long);
+                        unsigned_long_to_str(value, temp);
+                    } else if (length_mod == 2) {  // unsigned long
+                        unsigned_long_to_str(va_arg(args_copy, unsigned long), temp);
+                    } else {
+                        unsigned_int_to_str(va_arg(args_copy, unsigned int), temp);
+                    }
+                    
+                    int len = strlen(temp);
+                    total_length += (width > len) ? width : len;
+                    break;
+                }
+                case '%': {
+                    total_length += 1;  // Just a % character
                     break;
                 }
                 default:
-                    total_length += 2;
+                    total_length += 2;  // Unknown format - print as is
                     break;
             }
-            fmt_index += 2;
+            fmt_index++;
         } else {
             total_length++;
             fmt_index++;
@@ -383,91 +686,300 @@ char* str_format(const char* fmt, va_list args) {
 
     fmt_index = 0;
     int buffer_index = 0;
-    while (fmt[fmt_index]!= '\0') {
-        if (fmt[fmt_index] == '%' && fmt[fmt_index + 1]!= '\0') {
-            switch (fmt[fmt_index + 1]) {
+    while (fmt[fmt_index] != '\0') {
+        if (fmt[fmt_index] == '%' && fmt[fmt_index + 1] != '\0') {
+            fmt_index++;
+            
+            int left_justify = 0;
+            char pad_char = ' ';
+            
+            if (fmt[fmt_index] == '-') {
+                left_justify = 1;
+                fmt_index++;
+            }
+            
+            if (fmt[fmt_index] == '0' && !left_justify) {
+                pad_char = '0';
+                fmt_index++;
+            }
+            
+            int width = 0;
+            if (fmt[fmt_index] >= '0' && fmt[fmt_index] <= '9') {
+                width = parse_int_from_fmt(fmt, &fmt_index);
+            } else if (fmt[fmt_index] == '*') {
+                width = va_arg(args, int);
+                if (width < 0) {
+                    width = -width;
+                    left_justify = 1;
+                }
+                fmt_index++;
+            }
+            
+            int precision = -1;
+            if (fmt[fmt_index] == '.') {
+                fmt_index++;
+                if (fmt[fmt_index] == '*') {
+                    precision = va_arg(args, int);
+                    fmt_index++;
+                } else {
+                    precision = parse_int_from_fmt(fmt, &fmt_index);
+                }
+            }
+            
+            // Length modifiers
+            int length_mod = 0;  // 0 = none, 1 = h, 2 = l, 3 = ll, 4 = L
+            if (fmt[fmt_index] == 'h') {
+                length_mod = 1;
+                fmt_index++;
+                if (fmt[fmt_index] == 'h') {
+                    fmt_index++;
+                }
+            } else if (fmt[fmt_index] == 'l') {
+                length_mod = 2;
+                fmt_index++;
+                if (fmt[fmt_index] == 'l') {
+                    length_mod = 3;  // long long
+                    fmt_index++;
+                }
+            } else if (fmt[fmt_index] == 'L') {
+                length_mod = 4;  // long double
+                fmt_index++;
+            }
+            
+            char temp[128] = {0};
+            char padded[128] = {0};
+            
+            switch (fmt[fmt_index]) {
                 case's': {
                     char* arg = va_arg(args, char*);
-                    while (*arg!= '\0') {
-                        buffer[buffer_index++] = *arg++;
+                    if (arg == NULL) arg = "(null)";
+                    
+                    if (precision >= 0) {
+                        strncpy(temp, arg, precision);
+                        temp[precision] = '\0';
+                    } else {
+                        strcpy(temp, arg);
+                    }
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
                     }
                     break;
                 }
-                case 'd': {
-                    char temp[20];
-                    int_to_str(va_arg(args, int), temp);
-                    char* arg = temp;
-                    while (*arg!= '\0') {
-                        buffer[buffer_index++] = *arg++;
+                case 'd':
+                case 'i': {
+                    long long value;
+                    
+                    if (length_mod == 3) {         // long long
+                        value = va_arg(args, long long);
+                        long_long_to_str(value, temp);
+                    } else if (length_mod == 2) {  // long
+                        value = va_arg(args, long);
+                        long_long_to_str(value, temp);
+                    } else {                        // int or default
+                        value = va_arg(args, int);
+                        int_to_str(value, temp);
+                    }
+                    
+                    if (width > 0) {
+                        if (pad_char == '0' && temp[0] == '-') {
+                            buffer[buffer_index++] = '-';
+                            apply_padding(padded, temp + 1, width - 1, left_justify, pad_char);
+                        } else {
+                            apply_padding(padded, temp, width, left_justify, pad_char);
+                        }
+                        
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
                     }
                     break;
                 }
                 case 'f': {
-                    char temp[32];
-                    float_to_str((float)va_arg(args, double), temp);
-                    char* arg = temp;
-                    while (*arg!= '\0') {
-                        buffer[buffer_index++] = *arg++;
+                    if (length_mod == 4) {  // long double
+                        double_to_str(va_arg(args, long double), temp, precision);
+                    } else {
+                        float_to_str((float)va_arg(args, double), temp, precision);
+                    }
+                    
+                    if (width > 0) {
+                        if (pad_char == '0' && temp[0] == '-') {
+                            buffer[buffer_index++] = '-';
+                            apply_padding(padded, temp + 1, width - 1, left_justify, pad_char);
+                        } else {
+                            apply_padding(padded, temp, width, left_justify, pad_char);
+                        }
+                        
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
+                    }
+                    break;
+                }
+                case 'g':
+                case 'e': {
+                    float_to_str((float)va_arg(args, double), temp, precision);
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
                     }
                     break;
                 }
                 case 'c': {
-                    buffer[buffer_index++] = va_arg(args, int);
-                    break;
-                }
-                case 'p': {
-                    char temp[20];
-                    pointer_to_str(va_arg(args, void*), temp);
-                    char* arg = temp;
-                    while (*arg!= '\0') {
-                        buffer[buffer_index++] = *arg++;
+                    temp[0] = (char)va_arg(args, int);
+                    temp[1] = '\0';
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        buffer[buffer_index++] = temp[0];
                     }
                     break;
                 }
-                case 'l': {
-                    if (fmt[fmt_index + 2] == 'l') {
-                        char temp[20];
-                        long_long_to_str(va_arg(args, long long), temp);
-                        char* arg = temp;
-                        while (*arg!= '\0') {
-                            buffer[buffer_index++] = *arg++;
+                case 'p': {
+                    pointer_to_str(va_arg(args, void*), temp);
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
                         }
-                        fmt_index += 2;
                     } else {
-                        if (fmt[fmt_index + 2] == 'd') {
-                            char temp[20];
-                            long_long_to_str(va_arg(args, long long), temp);
-                            char* arg = temp;
-                            while (*arg!= '\0') {
-                                buffer[buffer_index++] = *arg++;
-                            }
-                        } else if (fmt[fmt_index + 2] == 'u') {
-                            char temp[20];
-                            unsigned_long_to_str(va_arg(args, unsigned long), temp);
-                            char* arg = temp;
-                            while (*arg!= '\0') {
-                                buffer[buffer_index++] = *arg++;
-                            }
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
                         }
-                        fmt_index += 2;
+                    }
+                    break;
+                }
+                case 'x':
+                case 'X': {
+                    int uppercase = (fmt[fmt_index] == 'X');
+                    
+                    if (length_mod == 2) {  // long
+                        unsigned long value = va_arg(args, unsigned long);
+                        int_to_hex_str((unsigned int)value, temp, uppercase);
+                    } else {
+                        int_to_hex_str(va_arg(args, unsigned int), temp, uppercase);
+                    }
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
+                    }
+                    break;
+                }
+                case 'o': {
+                    int_to_oct_str(va_arg(args, unsigned int), temp);
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
+                    }
+                    break;
+                }
+                case 'b': { 
+                    int_to_bin_str(va_arg(args, unsigned int), temp);
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
                     }
                     break;
                 }
                 case 'u': {
-                    char temp[20];
-                    unsigned_int_to_str(va_arg(args, unsigned int), temp);
-                    char* arg = temp;
-                    while (*arg!= '\0') {
-                        buffer[buffer_index++] = *arg++;
+                    if (length_mod == 3) {  // unsigned long long
+                        unsigned long value = va_arg(args, unsigned long long);
+                        unsigned_long_to_str(value, temp);
+                    } else if (length_mod == 2) {
+                        unsigned_long_to_str(va_arg(args, unsigned long), temp);
+                    } else {
+                        unsigned_int_to_str(va_arg(args, unsigned int), temp);
+                    }
+                    
+                    if (width > 0) {
+                        apply_padding(padded, temp, width, left_justify, pad_char);
+                        char* pad_ptr = padded;
+                        while (*pad_ptr != '\0') {
+                            buffer[buffer_index++] = *pad_ptr++;
+                        }
+                    } else {
+                        char* temp_ptr = temp;
+                        while (*temp_ptr != '\0') {
+                            buffer[buffer_index++] = *temp_ptr++;
+                        }
                     }
                     break;
                 }
+                case '%': {
+                    buffer[buffer_index++] = '%';
+                    break;
+                }
                 default:
-                    buffer[buffer_index++] = fmt[fmt_index++];
+                    buffer[buffer_index++] = '%';
                     buffer[buffer_index++] = fmt[fmt_index];
                     break;
             }
-            fmt_index += 2;
+            fmt_index++;
         } else {
             buffer[buffer_index++] = fmt[fmt_index++];
         }
@@ -488,53 +1000,6 @@ void printf(const char *s, ...) {
     }
 }
 
-void kernel_shutdown(void) {
-    __asm__ volatile (
-        "mov $0x2000, %%ax\n\t"
-        "mov $0x604, %%dx\n\t"
-        "out %%ax, %%dx\n\t"
-        :
-        :
-        : "ax", "dx"
-    );
-    __asm__ volatile (
-        "mov $0x5307, %%ax\n\t"
-        "mov $0xb2, %%dx\n\t"
-        "out %%ax, %%dx\n\t"
-        :
-        :
-        : "ax", "dx"
-    );
-    __asm__ volatile (
-        "1:\n\t"
-        "in $0x64, %%al\n\t"
-        "test $0x02, %%al\n\t"
-        "jnz 1b\n\t"
-        "mov $0xd1, %%al\n\t"
-        "out %%al, $0x64\n\t"
-        "2:\n\t"
-        "in $0x64, %%al\n\t"
-        "test $0x02, %%al\n\t"
-        "jnz 2b\n\t"
-        "mov $0xfe, %%al\n\t"
-        "out %%al, $0x60\n\t"
-        :
-        :
-        : "al"
-    );
-
-    __asm__ volatile (
-        "cli\n\t"
-        "hlt\n\t"
-        :
-        :
-        :
-    );
-
-    while (1) {
-        __asm__ volatile ("hlt");
-    }
-}
 
 // TODO: Somehow use str_format
 char *time_format(struct Day* day) {

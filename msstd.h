@@ -7,6 +7,7 @@
 #include "libs/kernel.h"
 #include "libs/stdarg.h"
 #include "libs/stdio.h"
+#include "libs/kernel_interfaces.h"
 
 static inline uint64_t rdtsc(void) {
     uint32_t lo, hi;
