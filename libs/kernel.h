@@ -176,14 +176,88 @@ static void cpuid(uint32_t code, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t
     );
 }
 
-void kernel_cpu_get_info(char *vendor) {
+char *kernel_cpu_get_info() {
+    char *vendor = aarena_alloc(&arena, 256);
     uint32_t a, b, c, d;
     cpuid(0, &a, &b, &c, &d);
     *(uint32_t *)(vendor)     = b;
     *(uint32_t *)(vendor + 4) = d;
     *(uint32_t *)(vendor + 8) = c;
     vendor[12] = '\0';
+    return vendor;
 }
+
+
+#define SMBIOS_SIGNATURE 0x5F736D62
+
+typedef struct {
+    uint8_t  anchor[4];
+    uint8_t  checksum;
+    uint8_t  length;
+    uint8_t  major_version;
+    uint8_t  minor_version;
+    uint32_t table_length;
+    uint32_t table_address;
+    uint16_t structure_count;
+} SMBIOSHeader;
+
+typedef struct {
+    uint8_t type;
+    uint8_t length;
+    uint16_t handle;
+} SMBIOSStructureHeader;
+
+typedef struct {
+    SMBIOSStructureHeader header;
+    uint8_t vendor_string;
+} BIOSInfoStructure;
+
+SMBIOSHeader* kernel_bios_get_info() {
+    uint32_t smbios_address = 0;
+
+    asm volatile (
+        "mov $0xF0000, %%ebx;"
+        "mov $0x10000, %%ecx;"
+        "find_smbios:"
+        "cmpb $'_', (%%ebx);"
+        "jne next_byte;"
+        "cmpb $'S', 1(%%ebx);"
+        "jne next_byte;"
+        "cmpb $'M', 2(%%ebx);"
+        "jne next_byte;"
+        "cmpb $'B', 3(%%ebx);"
+        "jne next_byte;"
+        "mov %%ebx, %0;"
+        "jmp done;"
+        "next_byte: add $1, %%ebx;"
+        "loop find_smbios;"
+        "done:"
+        : "=m"(smbios_address)
+        : 
+        : "%eax", "%ebx", "%ecx"
+    );
+
+    SMBIOSHeader* smbios_header = (SMBIOSHeader*)smbios_address;
+
+    return smbios_header;
+}
+
+char* kernel_bios_get_vendor(SMBIOSHeader* smbios_header) {
+    uint32_t table_address = smbios_header->table_address;
+    SMBIOSStructureHeader* structure_header = (SMBIOSStructureHeader*)table_address;
+
+    while (structure_header->type != 0) {
+        if (structure_header->type == 0) {
+            BIOSInfoStructure* bios_info = (BIOSInfoStructure*)structure_header;
+            return (char*)&bios_info->vendor_string;
+        }
+        structure_header = (SMBIOSStructureHeader*)((uint8_t*)structure_header + structure_header->length);
+    }
+
+    return NULL;
+}
+
+
 
 // --------------------------------- TIME ------------------------------------------
 

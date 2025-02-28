@@ -12,24 +12,52 @@ static inline uint8_t inb(uint16_t port) {
 }
 
 static int shift = 0, ctrl = 0, alt = 0;
+static int layout = 0; // 0 = EN QWERTY, 1 = DE QWERTZ
+
+static char qwerty_map[256] = {
+    0,  27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
+    '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
+    0,   'a','s','d','f','g','h','j','k','l',';','\'','`',
+    0,  '\\','z','x','c','v','b','n','m',',','.','/',
+    0,   0,   0,  ' ',
+};
+
+static char qwerty_shift_map[256] = {
+    0,  27, '!','@','#','$','%','^','&','*','(',')','_','+','\b',
+    '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\n',
+    0,   'A','S','D','F','G','H','J','K','L',':','"','~',
+    0,   '|','Z','X','C','V','B','N','M','<','>','?',
+    0,   0,   0,  ' ',
+};
+
+static char qwertz_map[256] = {
+    0,  27, '1','2','3','4','5','6','7','8','9','0','-','\'','\b',
+    '\t','q','w','e','r','t','z','u','i','o','p','[','+','\n',
+    0,   'a','s','d','f','g','h','j','k','l',';','\'','#',
+    0,   '<','y','x','c','v','b','n','m',',','.','/',
+    0,   0,   0,  ' ',
+};
+
+static char qwertz_shift_map[256] = {
+    0,  27, '!','"','#','$','%','&','/','(',')','=','_','`','\b',
+    '\t','Q','W','E','R','T','Z','U','I','O','P','{','*','\n',
+    0,   'A','S','D','F','G','H','J','K','L',':','"','\'',
+    0,   '>','Y','X','C','V','B','N','M',';',':','_',
+    0,   0,   0,  ' ',
+};
+
+void set_keyboard_layout(int new_layout) {
+    layout = new_layout;
+}
+
+int get_keyboard_layout(void) {
+    return layout;
+}
 
 int getchar(void) {
     while (!(inb(0x64) & 1));
 
     uint8_t scancode = inb(0x60); 
-
-    static char scancode_map[256] = {
-        0,  27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
-        '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
-        0,   'a','s','d','f','g','h','j','k','l',';','\'','`',
-        0,  '\\','z','x','c','v','b','n','m',',','.','/',
-        0,   0,   0,  ' ',
-        0,   0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
-        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
-        0,   0,  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0,  0,  0,  0,  0,  0,
-        [0x2A] = 0, [0x36] = 0, [0x1D] = 0, [0x9D] = 0, [0x38] = 0, [0xB8] = 0
-    };
 
     if (scancode == 0x2A || scancode == 0x36) {
         shift = 1;
@@ -58,27 +86,32 @@ int getchar(void) {
         return 0;
     }
 
+    if (alt && ctrl && scancode == 0x21) {
+        layout = 0;
+        return 0;
+    }
+
+    if (alt && ctrl && scancode == 0x22) {
+        layout = 1;
+        return 0;
+    }
+
     if (scancode & 0x80) {
         return 0;
     }
 
-    char key = scancode_map[scancode];
-
-    if (shift) {
-        if (key >= 'a' && key <= 'z') {
-            key -= 32; 
-        } else if (key == '1') {
-            key = '!';
-        } else if (key == '2') {
-            key = '@';
-        } else if (key == '3') {
-            key = '#';
-        }
+    char key;
+    if (layout == 0) {
+        key = shift ? qwerty_shift_map[scancode] : qwerty_map[scancode];
+    } else {
+        key = shift ? qwertz_shift_map[scancode] : qwertz_map[scancode];
     }
 
     if (ctrl) {
         if (key >= 'a' && key <= 'z') {
-            key -= 32;
+            key = key - 'a' + 1;
+        } else if (key >= 'A' && key <= 'Z') {
+            key = key - 'A' + 1;
         }
     }
 
@@ -120,7 +153,6 @@ char *fgets(int size) {
     return buffer;
 }
 
-// dcc = Display clicked character
 int getchar_dcc(void) {
     char x = getchar();
     if (x != '\b') {
@@ -152,26 +184,12 @@ char *fgets_dcc(int size) {
     return buffer;
 }
 
-// nb = Non Blocking
 int getchar_nb(void) {
     if (!(inb(0x64) & 1)) {
         return -1;
     }
     
     uint8_t scancode = inb(0x60);
-    
-    static char scancode_map[256] = {
-        0,  27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
-        '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
-        0,   'a','s','d','f','g','h','j','k','l',';','\'','`',
-        0,  '\\','z','x','c','v','b','n','m',',','.','/',
-        0,   0,   0,  ' ',
-        0,   0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
-        0,   0,   0,  0,  0,   0,  0,  0,  0,  0,   0,  0,   0,  0,  0,  0,
-        0,   0,  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0,  0,  0,  0,  0,  0,
-        [0x2A] = 0, [0x36] = 0, [0x1D] = 0, [0x9D] = 0, [0x38] = 0, [0xB8] = 0
-    };
     
     if (scancode == 0x2A || scancode == 0x36) {
         shift = 1;
@@ -197,30 +215,37 @@ int getchar_nb(void) {
         alt = 0;
         return 0;
     }
+
+    if (alt && ctrl && scancode == 0x21) {
+        layout = 0;
+        return 0;
+    }
+
+    if (alt && ctrl && scancode == 0x22) {
+        layout = 1;
+        return 0;
+    }
+    
     if (scancode & 0x80) {
         return 0;
     }
     
-    char key = scancode_map[scancode];
-    if (shift) {
-        if (key >= 'a' && key <= 'z') {
-            key -= 32; 
-        } else if (key == '1') {
-            key = '!';
-        } else if (key == '2') {
-            key = '@';
-        } else if (key == '3') {
-            key = '#';
-        }
+    char key;
+    if (layout == 0) {
+        key = shift ? qwerty_shift_map[scancode] : qwerty_map[scancode];
+    } else {
+        key = shift ? qwertz_shift_map[scancode] : qwertz_map[scancode];
     }
+
     if (ctrl) {
         if (key >= 'a' && key <= 'z') {
-            key -= 96;
+            key = key - 'a' + 1;
+        } else if (key >= 'A' && key <= 'Z') {
+            key = key - 'A' + 1;
         }
     }
     
     return key;
 }
 
-#endif // STDIO_H
-
+#endif

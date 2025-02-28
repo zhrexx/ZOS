@@ -1,43 +1,72 @@
+// TODO: Make libzos better
 // TODO: FileSystem > Load programs from disk
 // TODO: Drivers
+// TODO: Graphics
 #include "msstd.h"
+#include "libs/disk.h"
 
-#define K_VERSION 1.0
-#define K_SHELL_SYMBOL "$ "
+typedef struct {
+    char *input;
+    int pos;
+} Parser;
+char next_char(Parser *p) {
+    return p->input[p->pos];
+}
+int parse_number(Parser *p) {
+    int num = 0;
+    while (next_char(p) >= '0' && next_char(p) <= '9') {
+        num = num * 10 + (next_char(p) - '0');
+        p->pos++;
+    }
+    return num;
+}
+int parse_factor(Parser *p);
+int parse_term(Parser *p) {
+    int result = parse_factor(p);
+    while (next_char(p) == '*' || next_char(p) == '/') {
+        char op = next_char(p);
+        p->pos++;
+        int next_val = parse_factor(p);
+        if (op == '*') result *= next_val;
+        else {
+            if (next_val == 0) kernel_panic("division by zero\n");
+            result /= next_val;
+        }
+    }
+    return result;
+}
+int parse_expression(Parser *);
+int parse_factor(Parser *p) {
+    if (next_char(p) == '(') {
+        p->pos++;
+        int result = parse_expression(p);
+        if (next_char(p) == ')') p->pos++;
+        return result;
+    }
+    return parse_number(p);
+}
+int parse_expression(Parser *p) {
+    int result = parse_term(p);
+    while (next_char(p) == '+' || next_char(p) == '-') {
+        char op = next_char(p);
+        p->pos++;
+        int next_val = parse_term(p);
+        if (op == '+') result += next_val;
+        else result -= next_val;
+    }
+    return result;
+}
 
 void calculator() {
-    printf("First Number: ");
-    char *fnum_str = fgets_dcc(256);
-    int fnum = atoi(fnum_str);
-    printf("Second Number: ");
-    char *snum_str = fgets_dcc(256);
-    int snum = atoi(snum_str);
-    printf("(+|-|*|/) ");
-    char *symbol_str = fgets_dcc(256);
-    char symbol = symbol_str[0];
-    if (symbol == '\0') {
-        printf("ERROR: No symbol specified\n");
-        return;
-    }
-    printf("\n");
-    int r;
-    switch (symbol) {
-        case '+': r = fnum + snum; break;
-        case '-': r = fnum - snum; break;
-        case '*': r = fnum * snum; break;
-        case '/': 
-            if (snum == 0) {
-                kernel_panic("division by zero\n");
-                return;
-            }
-            r = fnum / snum; 
-            break;
-        default:
-            printf("ERROR: Unknown symbol: %c\n", symbol);
-            return;
-    }
-    printf("Result: %d\n", r);
+    char *input = aarena_alloc(&arena, 256);
+    printf("Enter expression: ");
+    input = fgets_dcc(256);
+    
+    Parser p = {input, 0};
+    int result = parse_expression(&p);
+    printf("Result: %d\n", result);
 }
+
 
 void number_game() {
     while (1) {
@@ -50,7 +79,8 @@ void number_game() {
         if (rnum == (uint32_t)enumd) {
             break;
         }
-        kernel_clear_screen();
+        kernel_clean_latest_line();
+        kernel_clean_latest_line();
         printf("Wrong number guessed it was %d\n", rnum);
     }
     printf("Number guessed\n");
@@ -135,10 +165,10 @@ void shell_run() {
             kernel_shutdown();
         } else if (strcmp(cmd, "clear") == 0) {
             kernel_clear_screen();
-            printf("ZOS %f\n", K_VERSION);
+            printf("ZOS %.1f\n", K_VERSION);
             kernel_change_color("default");
-        } else if (strcmp(cmd, "author") == 0) {
-            printf("| Project: ZOS\n| Author: zhrexx\n");
+        } else if (strcmp(cmd, "version") == 0) {
+            printf("| Project: ZOS\n| Vesion: %.1f\n| Author: zhrexx\n", K_VERSION);
         } else if (strncmp(cmd, "color ", 6) == 0) {
             kernel_change_color(cmd+6);            
         } else if (strncmp(cmd, "calc", 4) == 0) {
@@ -152,6 +182,7 @@ void shell_run() {
             printf("| timer - a simple timer      |\n");
             printf("| cal - a simple calender     |\n");
             printf("| numgame - a simple game     |\n");
+            printf("| pinfo - get informations    |\n");
             printf("| exit - shutdowns the PC     |\n");
         } else if (strcmp(cmd, "infload") == 0) {
             return;
@@ -159,24 +190,34 @@ void shell_run() {
             printf("%s\n", time_now());
         } else if (strcmp(cmd, "timer") == 0) {
             struct time_info prev = kernel_time();
-            int c = 0;
             int running = 1;
             uint64_t cps = get_cpu_speed();
+            int minutes = 0;
+            int seconds = 0;
             printf("Timer. Press 'q' to exit.\n");
             while (running) {
                 struct time_info ti = kernel_time();
+    
                 if (ti.seconds != prev.seconds) {
-                    c++;
-                    printf("%d\n", c);
+                    seconds++;
+        
+                    if (seconds >= 60) {
+                        seconds = 0;
+                        minutes++;
+                    }
+        
+                    printf("%dm %ds\n", minutes, seconds);
                     term_row--;
                     prev = ti;
                 }
+    
                 if (getchar_nb() == 'q') {
                     term_row++;
                     kernel_clean_latest_line();
                     kernel_clean_latest_line();
                     running = 0;
                 }
+    
                 kernel_delay(cps / 1000);
             }
         } else if (strcmp(cmd, "cal") == 0) {
@@ -184,6 +225,19 @@ void shell_run() {
             print_calendar(d.year, d.month);
         } else if (strcmp(cmd, "numgame") == 0) {
             number_game();
+        } else if (strcmp(cmd, "pinfo") == 0) {
+            printf("| PInfo             |\n");
+            printf("| Processor : %s    |\n", kernel_cpu_get_info());
+            SMBIOSHeader *bh = kernel_bios_get_info();
+            printf("| BIOS: %s          |\n", kernel_bios_get_vendor(bh) ? kernel_bios_get_vendor(bh) : "Not found");
+        } else if (strcmp(cmd, "switch_klayout") == 0) {
+            if (get_keyboard_layout() == 0) {
+                set_keyboard_layout(1); // DE 
+            } else {
+                set_keyboard_layout(0); // EN
+            }
+        } else if (strcmp(cmd, "ls") == 0) {
+            fs_list_files();
         } else {
             printf("Unknown Command: %s\n", cmd);
         }
@@ -192,11 +246,21 @@ void shell_run() {
     }
 }
 
+// My Test Config
+#define ZCONFIG
+#define FS_INIT
+
 void kernel_main(unsigned int magic, unsigned int* mboot_info) {
     (void) magic, (void)mboot_info;
     kernel_clear_screen();
-    printf("ZOS %f\n", K_VERSION);
+    printf("ZOS %.1f\n", K_VERSION);
     printf("%s\n", time_now());
+#ifdef ZCONFIG
+    set_keyboard_layout(1);
+#endif
+#ifdef FS_INIT 
+    fs_init();
+#endif
     shell_run();
     kernel_clear_screen();
     printf("Infinite Loading\nIf you wanna shutdown click 'q'\n");
