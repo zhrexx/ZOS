@@ -21,6 +21,9 @@
 #define MAX_FILENAME            32
 #define FIRST_DATA_SECTOR       10
 
+#define DISK_ERROR -1
+#define DISK_NOT_FOUND 0 
+
 static inline void outb(uint16_t port, uint8_t value) {
     asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -101,7 +104,7 @@ void disk_write_sector(uint32_t lba, const uint8_t *buffer) {
 }
 
 
-void fs_init() {
+int fs_init() {
     FileTable ft;
     uint8_t buffer[SECTOR_SIZE];
 
@@ -113,9 +116,9 @@ void fs_init() {
         ft.num_files = 0;
         memcpy(buffer, &ft, sizeof(FileTable));
         disk_write_sector(1, buffer);
-        printf("File system initialized.\n");
+        return 1;
     } else {
-        printf("File system already initialized.\n");
+        return 0;
     }
 }
 void fs_list_files() {
@@ -133,6 +136,7 @@ void fs_list_files() {
     printf("Files on disk: %d\n", ft.num_files);
     for (uint32_t i = 0; i < MAX_FILES; i++) {
         if (ft.files[i].in_use) {
+            if (ft.files[i].filename[0] == '\0') break;
             printf("%s - %d bytes\n", ft.files[i].filename, ft.files[i].size);
         }
     }
@@ -275,6 +279,28 @@ int fs_delete_file(const char *filename) {
     disk_write_sector(1, buffer);
     
     return 0;
+}
+
+uint32_t fs_get_file_size(const char *filename) {
+    FileTable ft;
+    uint8_t buffer[SECTOR_SIZE];
+    
+    disk_read_sector(1, buffer);
+    memcpy(&ft, buffer, sizeof(FileTable));
+    
+    if (strncmp(ft.magic, K_MAGIC, 4) != 0) {
+        kernel_panic("Filesystem not initialized!\n");
+        return DISK_ERROR;
+    }
+    
+    for (uint32_t i = 0; i < MAX_FILES; i++) {
+        if (ft.files[i].in_use) {
+            if (strcmp(filename, ft.files[i].filename) == 0) {
+                return ft.files[i].size;
+            }
+        }
+    }
+    return DISK_NOT_FOUND;
 }
 
 #endif

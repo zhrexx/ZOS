@@ -1,5 +1,8 @@
 // TODO: Make libzos better
-// TODO: FileSystem > Load programs from disk
+// FileSystem > Load programs from disk
+// > DONE: disk and files 
+// > Load program from disk
+// > Directories
 // TODO: Drivers
 // TODO: Graphics
 #include "msstd.h"
@@ -60,30 +63,31 @@ int parse_expression(Parser *p) {
 void calculator() {
     char *input = aarena_alloc(&arena, 256);
     printf("Enter expression: ");
-    input = fgets_dcc(256);
-    
+    input = fgets_dcc(256); 
     Parser p = {input, 0};
     int result = parse_expression(&p);
     printf("Result: %d\n", result);
 }
-
 
 void number_game() {
     while (1) {
         uint32_t rnum = kernel_rand_range(1, 100);
         printf("Enter a number: ");
         const char *epswd = fgets_dcc(100);
+        if (strcmp(epswd, "quit") == 0) {
+            break;
+        }
         int enumd = atoi(epswd);
         printf("\n");
         
         if (rnum == (uint32_t)enumd) {
+            printf("Number guessed\n");
             break;
         }
         kernel_clean_latest_line();
         kernel_clean_latest_line();
         printf("Wrong number guessed it was %d\n", rnum);
     }
-    printf("Number guessed\n");
 }
 
 int get_day_of_week(int year, int month) {
@@ -151,6 +155,41 @@ uint64_t get_cpu_speed(void) {
     return cycles;
 }
 
+void less_view_file(const char *filename) {
+    uint32_t fsize = fs_get_file_size(filename);
+    uint8_t *buffer = aarena_alloc(&arena, fsize);
+    fs_read_file(filename, buffer, &fsize);
+    
+    int lines = 0, pos = 0;
+    for (uint32_t i = 0; i < fsize; i++) {
+        if (buffer[i] == '\n') lines++;
+    }
+    
+    int screen_lines = VGA_HEIGHT;
+    int start_line = 0;
+    
+    while (1) {
+        kernel_clear_screen();
+        
+        int current_line = 0;
+        for (uint32_t i = 0; i < fsize; i++) {
+            if (current_line >= start_line && current_line < start_line + screen_lines) {
+                printf("%c", buffer[i]);
+            }
+            if (buffer[i] == '\n') {
+                current_line++;
+                if (current_line >= start_line + screen_lines) break;
+            }
+        }
+        
+        char key = getchar();
+        if (key == 'q') break;
+        if (key == 's' && start_line + screen_lines < lines) start_line++;
+        if (key == 'w' && start_line > 0) start_line--;
+    }
+    
+    kernel_clear_screen();
+}
 
 void shell_run() {
     printf(K_SHELL_SYMBOL);
@@ -183,6 +222,8 @@ void shell_run() {
             printf("| cal - a simple calender     |\n");
             printf("| numgame - a simple game     |\n");
             printf("| pinfo - get informations    |\n");
+            printf("| ls - list files             |\n");
+            printf("| cat <file> - print a file   |\n");
             printf("| exit - shutdowns the PC     |\n");
         } else if (strcmp(cmd, "infload") == 0) {
             return;
@@ -206,7 +247,7 @@ void shell_run() {
                         minutes++;
                     }
         
-                    printf("%dm %ds\n", minutes, seconds);
+                    printf("%02dm %02ds\n", minutes, seconds);
                     term_row--;
                     prev = ti;
                 }
@@ -238,6 +279,9 @@ void shell_run() {
             }
         } else if (strcmp(cmd, "ls") == 0) {
             fs_list_files();
+        } else if (strncmp(cmd, "cat ", 4) == 0) {
+            char *filename = cmd + 4;
+            less_view_file(filename);
         } else {
             printf("Unknown Command: %s\n", cmd);
         }
@@ -246,21 +290,13 @@ void shell_run() {
     }
 }
 
-// My Test Config
-#define ZCONFIG
-#define FS_INIT
-
 void kernel_main(unsigned int magic, unsigned int* mboot_info) {
     (void) magic, (void)mboot_info;
     kernel_clear_screen();
     printf("ZOS %.1f\n", K_VERSION);
     printf("%s\n", time_now());
-#ifdef ZCONFIG
     set_keyboard_layout(1);
-#endif
-#ifdef FS_INIT 
-    fs_init();
-#endif
+    state.disk = fs_init();
     shell_run();
     kernel_clear_screen();
     printf("Infinite Loading\nIf you wanna shutdown click 'q'\n");
@@ -275,7 +311,6 @@ void kernel_main(unsigned int magic, unsigned int* mboot_info) {
 
     kernel_shutdown();
 }
-
 
 
 

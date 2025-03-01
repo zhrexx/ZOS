@@ -6,8 +6,10 @@
 
 // --------------- State ----------------------------
 typedef struct {
-    // TODO: Do something
+    int disk;
 } KernelState;
+
+KernelState state = {0};
 
 // --------------- Externs --------------------------
 extern void kernel_panic(const char *msg);
