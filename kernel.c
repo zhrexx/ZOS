@@ -4,6 +4,7 @@
 // > Load program from disk
 // > Directories
 // TODO: Drivers
+// TODO: Some Text Editor
 // TODO: Graphics
 #include "msstd.h"
 #include "libs/disk.h"
@@ -213,18 +214,19 @@ void shell_run() {
         } else if (strncmp(cmd, "calc", 4) == 0) {
             calculator();
         } else if (strcmp(cmd, "help") == 0) {
-            printf("| ZOS Help                    |\n");
-            printf("| calc - A simple Calculator  |\n");
-            printf("| color <str> - Set a color   |\n");
-            printf("| clear - clears the screen   |\n");
-            printf("| time - prints current time  |\n");
-            printf("| timer - a simple timer      |\n");
-            printf("| cal - a simple calender     |\n");
-            printf("| numgame - a simple game     |\n");
-            printf("| pinfo - get informations    |\n");
-            printf("| ls - list files             |\n");
-            printf("| cat <file> - print a file   |\n");
-            printf("| exit - shutdowns the PC     |\n");
+            printf("| ZOS Help                      |\n");
+            printf("| calc - A simple Calculator    |\n");
+            printf("| color <str> - Set a color     |\n");
+            printf("| clear - clears the screen     |\n");
+            printf("| time - prints current time    |\n");
+            printf("| timer - a simple timer        |\n");
+            printf("| cal - a simple calender       |\n");
+            printf("| numgame - a simple game       |\n");
+            printf("| pinfo - get informations      |\n");
+            printf("| ls - list files               |\n");
+            printf("| cat <file> - print a file     |\n");
+            printf("| touch <file> - create a file  |\n");
+            printf("| exit - shutdowns the PC       |\n");
         } else if (strcmp(cmd, "infload") == 0) {
             return;
         } else if (strcmp(cmd, "time") == 0) {
@@ -282,6 +284,12 @@ void shell_run() {
         } else if (strncmp(cmd, "cat ", 4) == 0) {
             char *filename = cmd + 4;
             less_view_file(filename);
+        } else if (strncmp(cmd, "touch ", 6) == 0) {
+            char *filename = cmd + 6;
+            fs_create_file(filename, NULL, 0);
+        } else if (strncmp(cmd, "rm ", 3) == 0) {
+            char *filename = cmd + 3;
+            fs_delete_file(filename);
         } else {
             printf("Unknown Command: %s\n", cmd);
         }
