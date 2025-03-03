@@ -8,6 +8,7 @@
 // TODO: Graphics
 #include "msstd.h"
 #include "libs/disk.h"
+#include "config.h"
 
 typedef struct {
     char *input;
@@ -158,12 +159,18 @@ uint64_t get_cpu_speed(void) {
 
 void less_view_file(const char *filename) {
     uint32_t fsize = fs_get_file_size(filename);
-    uint8_t *buffer = aarena_alloc(&arena, fsize);
+    uint8_t *buffer = aarena_alloc(&arena, fsize + 1);
     fs_read_file(filename, buffer, &fsize);
-    
-    int lines = 0, pos = 0;
+    buffer[fsize] = '\0';
+
+    int lines = 0;
     for (uint32_t i = 0; i < fsize; i++) {
-        if (buffer[i] == '\n') lines++;
+        if (buffer[i] == '\n') {
+            lines++;
+        }
+    }
+    if (fsize > 0 && buffer[fsize - 1] != '\n') {
+        lines++;
     }
     
     int screen_lines = VGA_HEIGHT;
@@ -171,15 +178,17 @@ void less_view_file(const char *filename) {
     
     while (1) {
         kernel_clear_screen();
-        
         int current_line = 0;
-        for (uint32_t i = 0; i < fsize; i++) {
-            if (current_line >= start_line && current_line < start_line + screen_lines) {
+        int printed_lines = 0;
+        for (uint32_t i = 0; i < fsize && printed_lines < screen_lines; i++) {
+            if (current_line >= start_line) {
                 printf("%c", buffer[i]);
+                if (buffer[i] == '\n') {
+                    printed_lines++;
+                }
             }
             if (buffer[i] == '\n') {
                 current_line++;
-                if (current_line >= start_line + screen_lines) break;
             }
         }
         
@@ -191,6 +200,82 @@ void less_view_file(const char *filename) {
     
     kernel_clear_screen();
 }
+
+
+void text_editor(const char *filename) {
+    uint32_t fsize = fs_get_file_size(filename);
+    uint32_t buffer_size = fsize + 1024;
+    char *buffer = aarena_alloc(&arena, buffer_size);
+    if (fsize > 0) {
+        fs_read_file(filename, (uint8_t *)buffer, &fsize);
+        buffer[fsize] = '\0';
+    } else {
+        buffer[0] = '\0';
+    }
+    
+    char command[32];
+    int editing = 1;
+    
+    while (editing) {
+        kernel_clear_screen();
+        printf("File: %s\n", filename);
+        printf("---- File Content ----\n");
+        printf("%s\n", buffer);
+        printf("----------------------\n");
+        printf("Commands:\n");
+        printf("  i - insert (append a new line)\n");
+        printf("  d - delete last line\n");
+        printf("  s - save changes\n");
+        printf("  q - quit editor\n");
+        printf("Enter command: ");
+        
+        char *input = fgets_dcc(32);
+        if (input == NULL) continue;
+        strncpy(command, input, sizeof(command));
+        command[sizeof(command) - 1] = '\0';
+        command[strcspn(command, "\n")] = '\0';
+        
+        if (strcmp(command, "i") == 0) {
+            char line[256];
+            printf("Enter text to append: ");
+            char *line_input = fgets_dcc(256);
+            if (line_input != NULL) {
+                strncpy(line, line_input, sizeof(line));
+                line[sizeof(line) - 1] = '\0';
+                line[strcspn(line, "\n")] = '\0';
+            } else {
+                line[0] = '\0';
+            }
+            strcat(line, "\n");
+            if (strlen(buffer) + strlen(line) < buffer_size - 1) {
+                strcat(buffer, line);
+            } else {
+                printf("Buffer full! Cannot append more text.\n");
+                kernel_delay(1000);
+            }
+        } else if (strcmp(command, "d") == 0) {
+            char *last_newline = strrchr(buffer, '\n');
+            if (last_newline != NULL) {
+                *last_newline = '\0'; 
+            } else {
+                buffer[0] = '\0';
+            }
+        } else if (strcmp(command, "s") == 0) {
+            uint32_t new_size = strlen(buffer);
+            fs_edit_file(filename, (uint8_t *)buffer, new_size);
+            printf("File saved.\n");
+            kernel_delay(1000);
+        } else if (strcmp(command, "q") == 0) {
+            editing = 0;
+        } else {
+            printf("Unknown command: %s\n", command);
+            kernel_delay(1000);
+        }
+    }
+    kernel_clear_screen();
+}
+
+
 
 void shell_run() {
     printf(K_SHELL_SYMBOL);
@@ -226,6 +311,7 @@ void shell_run() {
             printf("| ls - list files               |\n");
             printf("| cat <file> - print a file     |\n");
             printf("| touch <file> - create a file  |\n");
+            printf("| rm <file> - removes a file    |\n");
             printf("| exit - shutdowns the PC       |\n");
         } else if (strcmp(cmd, "infload") == 0) {
             return;
@@ -290,6 +376,8 @@ void shell_run() {
         } else if (strncmp(cmd, "rm ", 3) == 0) {
             char *filename = cmd + 3;
             fs_delete_file(filename);
+        } else if (strncmp(cmd, "edit ", 5) == 0) {
+            text_editor(cmd + 5);
         } else {
             printf("Unknown Command: %s\n", cmd);
         }
@@ -298,12 +386,14 @@ void shell_run() {
     }
 }
 
+#define TIMEZONE_CENTERAL_EUROPE
 void kernel_main(unsigned int magic, unsigned int* mboot_info) {
     (void) magic, (void)mboot_info;
     kernel_clear_screen();
+    kernel_timezone(zconfig.timezone);
     printf("ZOS %.1f\n", K_VERSION);
     printf("%s\n", time_now());
-    set_keyboard_layout(1);
+    set_keyboard_layout(zconfig.klayout);
     state.disk = fs_init();
     shell_run();
     kernel_clear_screen();

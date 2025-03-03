@@ -6,6 +6,14 @@
 #include "kernel.h"
 #include "stdarg.h"
 
+typedef struct {
+    char **lines;
+    int lines_count;
+} OutputBuffer;
+
+OutputBuffer obuffer = {0};
+
+//------------------------
 
 uint64_t __udivdi3(uint64_t a, uint64_t b) {
     uint64_t quotient = 0;
@@ -82,6 +90,19 @@ int atoi(const char *str) {
     return result * sign;
 }
 
+size_t strcspn(const char *s, const char *reject) {
+    const char *p, *r;
+    
+    for (p = s; *p; p++) {
+        for (r = reject; *r; r++) {
+            if (*p == *r) {
+                return p - s;
+            }
+        }
+    }
+    return p - s;
+}
+
 int memcmp(const void *s1, const void *s2, unsigned int n) {
     const unsigned char *p1 = (const unsigned char *)s1;
     const unsigned char *p2 = (const unsigned char *)s2;
@@ -133,6 +154,32 @@ int strcmp(const char *str1, const char *str2) {
     }
     return (unsigned char)*str1 - (unsigned char)*str2;
 }
+
+char *strcat(char *dest, const char *src) {
+    char *dest_end = dest;
+    while (*dest_end) {
+        dest_end++;
+    }
+    while (*src) {
+        *dest_end++ = *src++;
+    }
+    *dest_end = '\0';
+    return dest;
+}
+char *strrchr(const char *s, int c) {
+    char *last = NULL;
+    while (*s) {
+        if (*s == (char)c) {
+            last = (char *)s;
+        }
+        s++;
+    }
+    if ((char)c == '\0') {
+        return (char *)s;
+    }
+    return last;
+}
+
 
 int strncmp(const char *str1, const char *str2, size_t n) {
     while (n-- && *str1 && (*str1 == *str2)) {
@@ -1002,17 +1049,33 @@ char* str_format(const char* fmt, va_list args) {
     return buffer;
 }
 
-void printf(const char *s, ...) {
-    va_list args;
-    va_start(args, s);
+int vfprintf(int fd, const char *s, va_list args) {
     char *fmt = str_format(s, args);
-    va_end(args);
-    
-    if (fmt) {
-        kernel_print_string(fmt);
-    }
+    if (!fmt) return -1;
+    int len = strlen(fmt);
+    kernel_write(fd, fmt, len);
+    return len;
 }
 
+int fprintf(int fd, const char *s, ...) {
+    va_list args;
+    va_start(args, s);
+    int ret = vfprintf(fd, s, args);
+    va_end(args);
+    return ret;
+}
+
+int vprintf(const char *s, va_list args) {
+    return vfprintf(STDOUT, s, args);
+}
+
+int printf(const char *s, ...) {
+    va_list args;
+    va_start(args, s);
+    int ret = vfprintf(STDOUT, s, args);
+    va_end(args);
+    return ret;
+}
 
 // TODO: Somehow use str_format
 char *time_format(struct Day* day) {

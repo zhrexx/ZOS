@@ -5,6 +5,8 @@
 #include "memory.h" 
 #include "interfaces.h"
 
+//--------------------------
+
 #define KEY_UP      1000
 #define KEY_DOWN    1001
 #define KEY_LEFT    1002

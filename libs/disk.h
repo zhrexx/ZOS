@@ -18,7 +18,7 @@
 
 #define SECTOR_SIZE             512
 #define MAX_FILES               64
-#define MAX_FILENAME            32
+#define MAX_FILENAME            64
 #define FIRST_DATA_SECTOR       10
 
 #define DISK_ERROR -1
@@ -301,6 +301,80 @@ uint32_t fs_get_file_size(const char *filename) {
         }
     }
     return DISK_NOT_FOUND;
+}
+
+int fs_file_exists(const char *filename) {
+    return fs_get_file_size(filename) != 0;
+}
+
+int fs_edit_file(const char *filename, const uint8_t *data, uint32_t new_size) {
+    FileTable ft;
+    uint8_t buffer[SECTOR_SIZE];
+    disk_read_sector(1, buffer);
+    memcpy(&ft, buffer, sizeof(FileTable));
+    int file_index = -1;
+    for (uint32_t i = 0; i < MAX_FILES; i++) {
+        if (ft.files[i].in_use && strcmp(ft.files[i].filename, filename) == 0) {
+            file_index = i;
+            break;
+        }
+    }
+    if (file_index == -1) {
+        printf("File not found\n");
+        return -1;
+    }
+    uint32_t current_allocated_bytes = ft.files[file_index].num_sectors * SECTOR_SIZE;
+    uint32_t new_num_sectors = (new_size + SECTOR_SIZE - 1) / SECTOR_SIZE;
+    if (new_size <= current_allocated_bytes) {
+        for (uint32_t i = 0; i < ft.files[file_index].num_sectors; i++) {
+            uint32_t offset = i * SECTOR_SIZE;
+            uint32_t bytes_to_write;
+            if (i == ft.files[file_index].num_sectors - 1) {
+                bytes_to_write = (new_size - offset < SECTOR_SIZE)? (new_size - offset) : SECTOR_SIZE;
+            } else {
+                bytes_to_write = SECTOR_SIZE;
+            }
+            memset(buffer, 0, SECTOR_SIZE);
+            if (offset < new_size) {
+                memcpy(buffer, data + offset, bytes_to_write);
+            }
+            disk_write_sector(ft.files[file_index].first_sector + i, buffer);
+        }
+        ft.files[file_index].size = new_size;
+        for (uint32_t i = new_num_sectors; i < ft.files[file_index].num_sectors; i++) {
+            memset(buffer, 0, SECTOR_SIZE);
+            disk_write_sector(ft.files[file_index].first_sector + i, buffer);
+        }
+        ft.files[file_index].num_sectors = new_num_sectors;
+    } else {
+        uint32_t free_sectors = fs_find_free_sector() - ft.files[file_index].first_sector - ft.files[file_index].num_sectors;
+        if (new_num_sectors > free_sectors) {
+            printf("Not enough free space\n");
+            return -1;
+        }
+        uint32_t new_first_sector = ft.files[file_index].first_sector;
+        for (uint32_t i = 0; i < new_num_sectors; i++) {
+            uint32_t offset = i * SECTOR_SIZE;
+            uint32_t bytes_to_write;
+            if (i == new_num_sectors - 1) {
+                bytes_to_write = (new_size - offset < SECTOR_SIZE)? (new_size - offset) : SECTOR_SIZE;
+            } else {
+                bytes_to_write = SECTOR_SIZE;
+            }
+            memset(buffer, 0, SECTOR_SIZE);
+            if (offset < new_size) {
+                memcpy(buffer, data + offset, bytes_to_write);
+            }
+            disk_write_sector(new_first_sector + i, buffer);
+        }
+        ft.files[file_index].first_sector = new_first_sector;
+        ft.files[file_index].num_sectors = new_num_sectors;
+        ft.files[file_index].size = new_size;
+    }
+    memcpy(buffer, &ft, sizeof(FileTable));
+    disk_write_sector(1, buffer);
+
+    return 0;
 }
 
 #endif

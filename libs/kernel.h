@@ -4,21 +4,34 @@
 #include "types.h"
 #include "memory.h"
 
+//---------------- Definitions ----------------------
+#define STDOUT 0 
+#define STDIN 1 
+#define STDERR 2
+
 // --------------- State ----------------------------
 typedef struct {
     int disk;
+    int timezone;
 } KernelState;
 
-KernelState state = {0};
+KernelState state = {
+    .disk = -1,
+    .timezone = 0
+};
 
 // --------------- Externs --------------------------
 extern void kernel_panic(const char *msg);
-
+extern int getchar();
 // --------------- Utils ----------------------------
 
 void kernel_delay(int iterations) {
     volatile int i;
     for (i = 0; i < iterations; i++) {}
+}
+
+void kernel_timezone(int ntimezone) {
+    state.timezone = ntimezone;
 }
 
 static int kernel_strcmp(const char *str1, const char *str2) {
@@ -32,46 +45,140 @@ static int kernel_strcmp(const char *str1, const char *str2) {
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 40
+#define EOF (-1)
 
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
+static unsigned short output_buffer[VGA_WIDTH * VGA_HEIGHT];
 int term_row = 0;
 int term_col = 0;
 unsigned char term_color = 0x07;
 
+void kernel_flush_buffer(void) {
+    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
+        vga_buffer[i] = output_buffer[i];
+    }
+}
+
 void kernel_clear_screen(void) {
     for (int y = 0; y < VGA_HEIGHT; y++) {
         for (int x = 0; x < VGA_WIDTH; x++) {
-            const size_t index = y * VGA_WIDTH + x;
-            vga_buffer[index] = (unsigned short)0x0720;
+            output_buffer[y * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
         }
     }
     term_row = 0;
     term_col = 0;
+    kernel_flush_buffer();
 }
 
-void kernel_print_string(const char* str) {
+void kernel_scroll_up(void) {
+    for (int y = 1; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            output_buffer[(y - 1) * VGA_WIDTH + x] = output_buffer[y * VGA_WIDTH + x];
+        }
+    }
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        output_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
+    }
+    if (term_row > 0) term_row--;
+    term_col = 0;
+    kernel_flush_buffer();
+}
+
+void kernel_scroll_down(void) {
+    for (int y = VGA_HEIGHT - 2; y >= 0; y--) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            output_buffer[(y + 1) * VGA_WIDTH + x] = output_buffer[y * VGA_WIDTH + x];
+        }
+    }
+    for (int x = 0; x < VGA_WIDTH; x++) {
+        output_buffer[x] = (unsigned short)(term_color << 8) | ' ';
+    }
+    if (term_row < VGA_HEIGHT - 1) term_row++;
+    term_col = 0;
+    kernel_flush_buffer();
+}
+
+void kernel_set_cursor_pos(int col, int row) {
+    if (col < 0) col = 0;
+    if (col >= VGA_WIDTH) col = VGA_WIDTH - 1;
+    if (row < 0) row = 0;
+    if (row >= VGA_HEIGHT) row = VGA_HEIGHT - 1;
+    term_row = row;
+    term_col = col;
+}
+
+void kernel_print_string(const char *str) {
     while (*str) {
         if (*str == '\n') {
             term_col = 0;
             term_row++;
+            if (term_row >= VGA_HEIGHT) {
+                kernel_scroll_up();
+            }
             str++;
             continue;
         }
-
-        if (term_row >= VGA_HEIGHT) {
-            kernel_clear_screen();
-        }
-
-        const size_t index = term_row * VGA_WIDTH + term_col;
-        vga_buffer[index] = (unsigned short)(term_color << 8) | *str;
-
+        output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | *str;
         term_col++;
         if (term_col >= VGA_WIDTH) {
             term_col = 0;
             term_row++;
+            if (term_row >= VGA_HEIGHT) {
+                kernel_scroll_up();
+            }
         }
         str++;
     }
+    kernel_flush_buffer();
+}
+
+void kernel_write(int fd, const char *str, int count) {
+    for (int i = 0; i < count && str[i]; i++) {
+        if (fd == STDOUT || fd == STDERR) {
+            if (str[i] == '\n') {
+                term_col = 0;
+                term_row++;
+                if (term_row >= VGA_HEIGHT) {
+                    kernel_scroll_up();
+                }
+                continue;
+            }
+            output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | str[i];
+            term_col++;
+            if (term_col >= VGA_WIDTH) {
+                term_col = 0;
+                term_row++;
+                if (term_row >= VGA_HEIGHT) {
+                    kernel_scroll_up();
+                }
+            }
+        }
+    }
+    kernel_flush_buffer();
+}
+
+int kernel_read(int fd, char *buf, size_t count) {
+    if (fd == STDIN) {
+        size_t read_count = 0;
+        for (size_t i = 0; i < count; i++) {
+            int ch = getchar();
+            if (ch == EOF) {
+                if (read_count == 0) {
+                    return -1;
+                }
+                break;
+            }
+            buf[i] = (char)ch;
+            read_count++;
+            if (ch == '\n') {
+                break;
+            }
+        }
+        return read_count;
+    } else if (fd >= 3 && state.disk != -1) {
+        return -1;
+    }
+    return -1;
 }
 
 void kernel_clean_latest_char(void) {
@@ -81,13 +188,8 @@ void kernel_clean_latest_char(void) {
         term_row--;
         term_col = VGA_WIDTH - 1;
     }
-
-    const size_t index = term_row * VGA_WIDTH + term_col;
-    vga_buffer[index] = (unsigned short)0x0720;
-
-    if (term_col == 0 && term_row == 0) {
-        return;
-    }
+    output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | ' ';
+    kernel_flush_buffer();
 }
 
 void kernel_clean_latest_line(void) {
@@ -97,15 +199,15 @@ void kernel_clean_latest_line(void) {
         term_row = 0;
     }
     for (int x = 0; x < VGA_WIDTH; x++) {
-        const size_t index = term_row * VGA_WIDTH + x;
-        vga_buffer[index] = (unsigned short)0x0720; 
+        output_buffer[term_row * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
     }
     term_col = 0;
+    kernel_flush_buffer();
 }
 
 void kernel_change_color(char *color) {
     unsigned char col = 0;
-    if (color == NULL) {
+    if (color == 0) {
         return;
     }
     if (kernel_strcmp(color, "black") == 0) {
@@ -146,7 +248,7 @@ void kernel_change_color(char *color) {
     term_color = col;
 }
 
-void kernel_reset_color() {
+void kernel_reset_color(void) {
     term_color = 0x7;
 }
 
@@ -155,17 +257,13 @@ void kernel_display_spinner(int row, int col, int frame) {
     char spinner_char = spinner_chars[frame % 4];
     int saved_row = term_row;
     int saved_col = term_col;
-    
     term_row = row;
     term_col = col;
-    
-    const size_t index = term_row * VGA_WIDTH + term_col;
-    vga_buffer[index] = (unsigned short)(term_color << 8) | spinner_char;
-    
+    output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | spinner_char;
     term_row = saved_row;
     term_col = saved_col;
+    kernel_flush_buffer();
 }
-
 
 
 //--------------------------------- Hardware ------------------------------------
@@ -351,7 +449,7 @@ struct Day kernel_localtime(uint32_t timestamp) {
     uint32_t days = timestamp / 86400;
     uint32_t remaining_seconds = timestamp % 86400;
     
-    dt->hours = remaining_seconds / 3600;
+    dt->hours = remaining_seconds / 3600 + state.timezone;
     remaining_seconds %= 3600;
     dt->minutes = remaining_seconds / 60;
     dt->seconds = remaining_seconds % 60;
