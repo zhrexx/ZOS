@@ -543,7 +543,7 @@ static void apply_padding(char* dest, const char* src, int width, int left_justi
     }
 }
 
-char* str_format(const char* fmt, va_list args) {
+char* str_vformat(const char* fmt, va_list args) {
     int fmt_index = 0;
     size_t total_length = 0;
 
@@ -1049,8 +1049,17 @@ char* str_format(const char* fmt, va_list args) {
     return buffer;
 }
 
+// simply a interface for the user
+char *str_format(const char *s, ...) {
+    va_list a;
+    va_start(a, s);
+    char *r = str_vformat(s, a);
+    va_end(a);
+    return r;
+}
+
 int vfprintf(int fd, const char *s, va_list args) {
-    char *fmt = str_format(s, args);
+    char *fmt = str_vformat(s, args);
     if (!fmt) return -1;
     int len = strlen(fmt);
     kernel_write(fd, fmt, len);
