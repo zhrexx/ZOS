@@ -1,10 +1,13 @@
 // TODO: Make libzos better
+// TODO: Implement a lua like language
 // FileSystem > Load programs from disk
 // > DONE: disk and files 
 // > Load program from disk
 // > Directories
 // TODO: Drivers
 // TODO: Some Text Editor
+// > DONE: simple text based file editor
+// > Better nvim like file editor
 // TODO: Graphics
 #include "msstd.h"
 #include "libs/disk.h"
@@ -13,11 +16,11 @@
 typedef struct {
     char *input;
     int pos;
-} Parser;
-char next_char(Parser *p) {
+} CalParser;
+char next_char(CalParser *p) {
     return p->input[p->pos];
 }
-int parse_number(Parser *p) {
+int parse_number(CalParser *p) {
     int num = 0;
     while (next_char(p) >= '0' && next_char(p) <= '9') {
         num = num * 10 + (next_char(p) - '0');
@@ -25,13 +28,13 @@ int parse_number(Parser *p) {
     }
     return num;
 }
-int parse_factor(Parser *p);
-int parse_term(Parser *p) {
-    int result = parse_factor(p);
+int parse_factor_cal(CalParser *p);
+int parse_term_cal(CalParser *p) {
+    int result = parse_factor_cal(p);
     while (next_char(p) == '*' || next_char(p) == '/') {
         char op = next_char(p);
         p->pos++;
-        int next_val = parse_factor(p);
+        int next_val = parse_factor_cal(p);
         if (op == '*') result *= next_val;
         else {
             if (next_val == 0) kernel_panic("division by zero\n");
@@ -40,22 +43,22 @@ int parse_term(Parser *p) {
     }
     return result;
 }
-int parse_expression(Parser *);
-int parse_factor(Parser *p) {
+int parse_expression_cal(CalParser *);
+int parse_factor_cal(CalParser *p) {
     if (next_char(p) == '(') {
         p->pos++;
-        int result = parse_expression(p);
+        int result = parse_expression_cal(p);
         if (next_char(p) == ')') p->pos++;
         return result;
     }
     return parse_number(p);
 }
-int parse_expression(Parser *p) {
-    int result = parse_term(p);
+int parse_expression_cal(CalParser *p) {
+    int result = parse_term_cal(p);
     while (next_char(p) == '+' || next_char(p) == '-') {
         char op = next_char(p);
         p->pos++;
-        int next_val = parse_term(p);
+        int next_val = parse_term_cal(p);
         if (op == '+') result += next_val;
         else result -= next_val;
     }
@@ -63,11 +66,11 @@ int parse_expression(Parser *p) {
 }
 
 void calculator() {
-    char *input = aarena_alloc(&arena, 256);
+    char *input = malloc(256);
     printf("Enter expression: ");
     input = fgets_dcc(256); 
-    Parser p = {input, 0};
-    int result = parse_expression(&p);
+    CalParser p = {input, 0};
+    int result = parse_expression_cal(&p);
     printf("Result: %d\n", result);
 }
 
@@ -147,6 +150,12 @@ void print_calendar(int year, int month) {
     printf("\n");
 }
 
+static inline uint64_t rdtsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
 uint64_t get_cpu_speed(void) {
     uint64_t start, end;
     uint64_t cycles;
@@ -159,7 +168,7 @@ uint64_t get_cpu_speed(void) {
 
 void less_view_file(const char *filename) {
     uint32_t fsize = fs_get_file_size(filename);
-    uint8_t *buffer = aarena_alloc(&arena, fsize + 1);
+    uint8_t *buffer = malloc(fsize + 1);
     fs_read_file(filename, buffer, &fsize);
     buffer[fsize] = '\0';
 
@@ -205,7 +214,7 @@ void less_view_file(const char *filename) {
 void text_editor(const char *filename) {
     uint32_t fsize = fs_get_file_size(filename);
     uint32_t buffer_size = fsize + 1024;
-    char *buffer = aarena_alloc(&arena, buffer_size);
+    char *buffer = malloc(buffer_size);
     if (fsize > 0) {
         fs_read_file(filename, (uint8_t *)buffer, &fsize);
         buffer[fsize] = '\0';
@@ -398,13 +407,12 @@ void kernel_main(unsigned int magic, unsigned int* mboot_info) {
     shell_run();
     kernel_clear_screen();
     printf("Infinite Loading\nIf you wanna shutdown click 'q'\n");
-    uint64_t cps = get_cpu_speed();
     for (size_t i = 0; 1 ;i++) {
         if (getchar_nb() == 'q') {
             break;
         }
         kernel_display_spinner(10, VGA_WIDTH/2-1, i);
-        kernel_delay(cps*2);
+        kernel_delay(get_cpu_speed() * 2);
     }
 
     kernel_shutdown();

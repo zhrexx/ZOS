@@ -158,7 +158,7 @@ int is_alt_pressed(void) {
 
 char *fgets(int size) {
     if (size <= 1) return NULL;
-    char *buffer = (char *)aarena_alloc(&arena, size);
+    char *buffer = (char *)malloc(size);
     if (!buffer) return NULL;
 
     int i = 0;
@@ -220,7 +220,7 @@ int getchar_dcc(void) {
 
 char *fgets_dcc(int size) {
     if (size <= 1) return NULL;
-    char *buffer = (char *)aarena_alloc(&arena, size);
+    char *buffer = (char *)malloc(size);
     if (!buffer) return NULL;
 
     int i = 0;

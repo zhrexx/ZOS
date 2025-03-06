@@ -28,6 +28,7 @@ run: os.iso disk.img # disk_format
 disk_util:
 	$(CC) disk_util.c -o disk_util
 
+
 disk_create: disk_util
 	./disk_util create disk.img 10
 	./disk_util format disk.img

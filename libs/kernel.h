@@ -277,7 +277,7 @@ static void cpuid(uint32_t code, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t
 }
 
 char *kernel_cpu_get_info() {
-    char *vendor = aarena_alloc(&arena, 256);
+    char *vendor = malloc(256);
     uint32_t a, b, c, d;
     cpuid(0, &a, &b, &c, &d);
     *(uint32_t *)(vendor)     = b;
@@ -445,7 +445,7 @@ static int is_leap_year(uint16_t year) {
 }
 
 struct Day kernel_localtime(uint32_t timestamp) {
-    struct Day* dt = aarena_alloc(&arena, sizeof(struct Day));
+    struct Day* dt = malloc(sizeof(struct Day));
     uint32_t days = timestamp / 86400;
     uint32_t remaining_seconds = timestamp % 86400;
     
@@ -485,6 +485,12 @@ struct Day kernel_localtime(uint32_t timestamp) {
     return result;
 }
 
+void kernel_wait(unsigned int seconds) {
+    struct time_info start = kernel_time();
+    while ((kernel_time().seconds - start.seconds) < seconds) {
+        kernel_delay(10000);
+    }
+}
 
 // ---------------- Random -------------------------------
 

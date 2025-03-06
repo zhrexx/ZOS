@@ -192,7 +192,7 @@ int strncmp(const char *str1, const char *str2, size_t n) {
 
 char *strdup(const char *str) {
     size_t len = strlen(str) + 1;
-    char *copy = aarena_alloc(&arena, len);
+    char *copy = malloc(len);
     if (copy) {
         memcpy(copy, str, len);
     }
@@ -739,7 +739,7 @@ char* str_vformat(const char* fmt, va_list args) {
 
     va_end(args_copy);
 
-    char* buffer = (char*)aarena_alloc(&arena, total_length + 1);
+    char* buffer = (char*)malloc(total_length + 1);
     if (buffer == NULL) {
         return NULL;
     }
@@ -1086,9 +1086,19 @@ int printf(const char *s, ...) {
     return ret;
 }
 
+void sprintf(char *buffer, const char *fmt, ...) {
+    va_list args;
+    char *out = buffer;
+    va_start(args, fmt);
+    
+    char *formatted = str_vformat(fmt, args);
+    strcpy(buffer, formatted);
+    va_end(args);
+}
+
 // TODO: Somehow use str_format
 char *time_format(struct Day* day) {
-    char* buffer = aarena_alloc(&arena, 32);
+    char* buffer = malloc(32);
     uint8_t pos = 0;
     uint16_t y = day->year;
     buffer[pos++] = '0' + (y / 1000);
@@ -1118,5 +1128,65 @@ char *time_format(struct Day* day) {
 char *time_now() {
     struct Day now = kernel_localtime(kernel_time().seconds);
     return time_format(&now);
+}
+
+
+
+double atof(const char* str) {
+    if (str == NULL) {
+        return 0.0;
+    }
+    while (*str == ' ' || *str == '\t' || *str == '\n') {
+        str++;
+    }
+    int sign = 1;
+    if (*str == '-') {
+        sign = -1;
+        str++;
+    } else if (*str == '+') {
+        str++;
+    }
+    double result = 0.0;
+    while (*str >= '0' && *str <= '9') {
+        result = result * 10.0 + (*str - '0');
+        str++;
+    }
+    if (*str == '.') {
+        str++;
+        double fraction = 0.0;
+        double divisor = 1.0;
+
+        while (*str >= '0' && *str <= '9') {
+            fraction = fraction * 10.0 + (*str - '0');
+            divisor *= 10.0;
+            str++;
+        }
+
+        result += fraction / divisor;
+    }
+    if (*str == 'e' || *str == 'E') {
+        str++;
+        int exponent_sign = 1;
+        if (*str == '-') {
+            exponent_sign = -1;
+            str++;
+        } else if (*str == '+') {
+            str++;
+        }
+        int exponent = 0;
+        while (*str >= '0' && *str <= '9') {
+            exponent = exponent * 10 + (*str - '0');
+            str++;
+        }
+        for (int i = 0; i < exponent; i++) {
+            if (exponent_sign > 0) {
+                result *= 10.0;
+            } else {
+                result /= 10.0;
+            }
+        }
+    }
+
+    return sign * result;
 }
 #endif
