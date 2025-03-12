@@ -1,5 +1,7 @@
+// TODO: Own binary format and asembler
+// > DONE: Format and assembler
+// > Fix assembler and running
 // TODO: Make libzos better
-// TODO: Implement a lua like language
 // FileSystem > Load programs from disk
 // > DONE: disk and files 
 // > Load program from disk
@@ -8,10 +10,12 @@
 // TODO: Some Text Editor
 // > DONE: simple text based file editor
 // > Better nvim like file editor
+// TODO: Processes
 // TODO: Graphics
 #include "msstd.h"
 #include "libs/disk.h"
 #include "config.h"
+#include "xbin.h"
 
 typedef struct {
     char *input;
@@ -387,7 +391,12 @@ void shell_run() {
             fs_delete_file(filename);
         } else if (strncmp(cmd, "edit ", 5) == 0) {
             text_editor(cmd + 5);
-        } else {
+        } else if (strncmp(cmd, "run ", 4) == 0) {
+            char *input = cmd + 4;
+            if (xbin_run(input) < 0) {
+                printf("ERROR: Could not run '%s'\n", input);
+            }
+        } else { 
             printf("Unknown Command: %s\n", cmd);
         }
         printf(K_SHELL_SYMBOL);

@@ -13,13 +13,34 @@ section .text
 global _start
 global init_pic
 global init_idt
-global keyboard_handler
+global int80_handler
 extern kernel_main
+extern kernel_syscall
+extern regs_t
 
-keyboard_handler:
+
+syscall_handler:
     pusha
-    popa
+
+    lea eax, [regs]
+    mov [eax + 0], eax
+    mov [eax + 4], ebx
+    mov [eax + 8], ecx
+    mov [eax + 12], edx
+    mov [eax + 16], esi
+    mov [eax + 20], edi
+    mov [eax + 24], ebp
+    mov [eax + 28], esp
+
+    mov eax, [regs]
+    push eax
+    push ebx
+    call kernel_syscall
+
+    pop eax
+    pop ebx
     iret
+
 
 init_pic:
     push ebp
@@ -60,8 +81,8 @@ init_idt:
     xor eax, eax
     rep stosb
 
-    mov edi, idt_table + (33 * 8)
-    mov eax, keyboard_handler
+    mov edi, idt_table + (0x25 * 8)
+    mov eax, syscall_handler
     mov word [edi], ax
     mov word [edi + 2], 0x08
     mov byte [edi + 4], 0
@@ -87,6 +108,7 @@ _start:
     hlt
 
 section .bss
+regs: resb 32
 align 16
 stack_bottom:
     resb 16384
@@ -97,3 +119,4 @@ idt_table:      times 256*8 db 0
 idt_pointer:    
     dw (256*8)-1
     dd idt_table
+

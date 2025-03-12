@@ -134,6 +134,24 @@ void *memset(void *ptr, int value, size_t num) {
     return ptr;
 }
 
+void *memmove(void *dest, const void *src, size_t n) {
+    unsigned char *d = (unsigned char *)dest;
+    const unsigned char *s = (const unsigned char *)src;
+    if (d < s) {
+        while (n--) {
+            *d++ = *s++;
+        }
+    }
+    else if (d > s) {
+        d += n;
+        s += n;
+        while (n--) {
+            *--d = *--s;
+        }
+    }
+    return dest;
+}
+
 
 int isspace(int c) {
     return (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r');
@@ -1088,7 +1106,6 @@ int printf(const char *s, ...) {
 
 void sprintf(char *buffer, const char *fmt, ...) {
     va_list args;
-    char *out = buffer;
     va_start(args, fmt);
     
     char *formatted = str_vformat(fmt, args);

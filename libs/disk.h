@@ -304,8 +304,18 @@ uint32_t fs_get_file_size(const char *filename) {
 }
 
 int fs_file_exists(const char *filename) {
-    return fs_get_file_size(filename) != 0;
+    FileTable ft;
+    uint8_t buffer[SECTOR_SIZE];
+    disk_read_sector(1, buffer);
+    memcpy(&ft, buffer, sizeof(FileTable));
+    for (uint32_t i = 0; i < MAX_FILES; i++) {
+        if (ft.files[i].in_use && strcmp(ft.files[i].filename, filename) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
+
 
 int fs_edit_file(const char *filename, const uint8_t *data, uint32_t new_size) {
     FileTable ft;

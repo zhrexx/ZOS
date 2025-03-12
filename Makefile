@@ -27,12 +27,23 @@ run: os.iso disk.img # disk_format
 
 disk_util:
 	$(CC) disk_util.c -o disk_util
+xam: xam.c
+	$(CC) xam.c -o xam
 
+xfile: xfile.c
+	$(CC) xfile.c -o xfile 
+
+xelf: xelf.c 
+	$(CC) xelf.c -o xelf
+
+xbinr: xbinr.c 
+	$(CC) xbinr.c -o xbinr 
 
 disk_create: disk_util
 	./disk_util create disk.img 10
 	./disk_util format disk.img
 
-
-
+example: example.xam xam disk_util
+	./xam example.xam example.xbin
+	./disk_util write disk.img example.xbin example.xbin
 

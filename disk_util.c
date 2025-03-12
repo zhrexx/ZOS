@@ -7,7 +7,7 @@
 
 #define SECTOR_SIZE 512
 #define MAX_FILES 64
-#define MAX_FILENAME 32
+#define MAX_FILENAME 64
 #define FIRST_DATA_SECTOR 10
 #define K_MAGIC "ZOS1"
 

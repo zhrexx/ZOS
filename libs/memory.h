@@ -27,8 +27,11 @@ typedef struct {
     uint32_t canary;
 } AllocationHeader;
 
-
-static AArena global_arena = {0};
+static AArena uarena = {0}; // User Arena
+static AArena karena = {0}; // Kernel Arena
+#ifndef global_arena
+#define global_arena karena
+#endif
 
 void *aarena_alloc(AArena *arena, size_t size) {
     if (arena->size + size + sizeof(AllocationHeader) + (2 * GUARD_SIZE) > ARENA_CAPACITY)
@@ -72,7 +75,7 @@ int aarena_check_memory(void *ptr) {
     return 1;
 }
 
-size_t aarena_alloc_size(void *ptr) {
+size_t aarena_sizeof(void *ptr) {
     if (!ptr) return 0;
     AllocationHeader *header = ((AllocationHeader *)ptr) - 1;
     return header->size;
@@ -126,7 +129,8 @@ void aarena_free_to(AArena *arena, Marker marker) {
     }
 }
 
-void aarena_free(AArena *arena, size_t abytes) {
+void aarena_free(AArena *arena, void *ptr) {
+    size_t abytes = aarena_sizeof(ptr);
     memset(&arena->buffer[abytes], 0, arena->size - abytes);
     arena->size -= abytes;
 }
