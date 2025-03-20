@@ -1,26 +1,27 @@
+OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
 
 SECTIONS {
     . = 1M;
-
-    .text : {
+    .text BLOCK(4K) : ALIGN(4K) {
         *(.multiboot)
         *(.text)
     }
-
-    .rodata : {
-        *(.rodata)
+    
+    .rodata BLOCK(4K) : ALIGN(4K) {
+        *(.rodata*)
     }
-
-    .data : {
+    
+    .data BLOCK(4K) : ALIGN(4K) {
         *(.data)
     }
-
-    .bss : {
+    
+    .bss BLOCK(4K) : ALIGN(4K) {
+        *(COMMON)
         *(.bss)
-    }
-
-    /DISCARD/ : {
-        *(.note.gnu.property)
+        . = ALIGN(16);
+        stack_bottom = .;
+        . += 16K;
+        stack_top = .;
     }
 }

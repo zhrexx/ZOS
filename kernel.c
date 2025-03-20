@@ -15,7 +15,6 @@
 #include "msstd.h"
 #include "libs/disk.h"
 #include "config.h"
-#include "xbin.h"
 
 typedef struct {
     char *input;
@@ -391,11 +390,6 @@ void shell_run() {
             fs_delete_file(filename);
         } else if (strncmp(cmd, "edit ", 5) == 0) {
             text_editor(cmd + 5);
-        } else if (strncmp(cmd, "run ", 4) == 0) {
-            char *input = cmd + 4;
-            if (xbin_run(input) < 0) {
-                printf("ERROR: Could not run '%s'\n", input);
-            }
         } else { 
             printf("Unknown Command: %s\n", cmd);
         }
@@ -404,12 +398,39 @@ void shell_run() {
     }
 }
 
-#define TIMEZONE_CENTERAL_EUROPE
+struct multiboot_info {
+    uint32_t flags;
+    uint32_t mem_lower;
+    uint32_t mem_upper;
+    uint32_t framebuffer_addr;
+    uint32_t framebuffer_pitch;
+    uint32_t framebuffer_width;
+    uint32_t framebuffer_height;
+    uint8_t framebuffer_bpp;
+};
+
+volatile uint32_t* vga_buffer;
+int VGA_WIDTH;
+int VGA_HEIGHT;
+int VGA_PITCH;
+
 void kernel_main(unsigned int magic, unsigned int* mboot_info) {
-    (void) magic, (void)mboot_info;
+    (void) magic;
+    struct multiboot_info *mb = (struct multiboot_info *)mboot_info;
+    if (mb->flags & (1 << 12)) {
+        vga_buffer = (volatile uint32_t*)mb->framebuffer_addr;
+        VGA_WIDTH = mb->framebuffer_width;
+        VGA_HEIGHT = mb->framebuffer_height;
+        VGA_PITCH = mb->framebuffer_pitch;
+    } else {
+        kernel_panic("No framebuffer info!");
+    }
+
     kernel_clear_screen();
     kernel_timezone(zconfig.timezone);
     printf("ZOS %.1f\n", K_VERSION);
+    init_idt();
+    init_pic();
     printf("%s\n", time_now());
     set_keyboard_layout(zconfig.klayout);
     state.disk = fs_init();

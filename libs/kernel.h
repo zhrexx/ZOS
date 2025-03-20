@@ -23,6 +23,7 @@ KernelState state = {
 // --------------- Externs --------------------------
 extern void kernel_panic(const char *msg);
 extern int getchar();
+extern void *memmove(void *, const void *, size_t);
 // --------------- Utils ----------------------------
 
 void kernel_delay(int iterations) {
@@ -42,69 +43,155 @@ static int kernel_strcmp(const char *str1, const char *str2) {
     return (unsigned char)*str1 - (unsigned char)*str2;
 }
 
-
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 40
-#define EOF (-1)
-
-volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
-static unsigned short output_buffer[VGA_WIDTH * VGA_HEIGHT];
 int term_row = 0;
 int term_col = 0;
 unsigned char term_color = 0x07;
+unsigned char term_background = 0x00;
 
-void kernel_flush_buffer(void) {
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        vga_buffer[i] = output_buffer[i];
+extern volatile uint32_t* vga_buffer;
+extern int VGA_WIDTH;
+extern int VGA_HEIGHT;
+extern int VGA_PITCH;
+#define EOF (-1)
+
+static const unsigned char font[256][8] = {
+    [0] = {0},                       // NULL
+    [32] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // Space
+    [48] = {0x3C,0x66,0x76,0x6E,0x66,0x66,0x3C,0x00}, // 0
+    [49] = {0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0x00}, // 1
+    [50] = {0x3C,0x66,0x06,0x0C,0x30,0x60,0x7E,0x00}, // 2
+    [51] = {0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00}, // 3
+    [52] = {0x0C,0x1C,0x3C,0x6C,0x7E,0x0C,0x0C,0x00}, // 4
+    [53] = {0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0x00}, // 5
+    [54] = {0x3C,0x66,0x60,0x7C,0x66,0x66,0x3C,0x00}, // 6
+    [55] = {0x7E,0x06,0x0C,0x18,0x30,0x30,0x30,0x00}, // 7
+    [56] = {0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00}, // 8
+    [57] = {0x3C,0x66,0x66,0x3E,0x06,0x66,0x3C,0x00}, // 9
+    
+    [65] = {0x18,0x3C,0x66,0x7E,0x66,0x66,0x66,0x00}, // A
+    [66] = {0x7C,0x66,0x66,0x7C,0x66,0x66,0x7C,0x00}, // B
+    [67] = {0x3C,0x66,0x60,0x60,0x60,0x66,0x3C,0x00}, // C
+    [68] = {0x78,0x6C,0x66,0x66,0x66,0x6C,0x78,0x00}, // D
+    [69] = {0x7E,0x60,0x60,0x78,0x60,0x60,0x7E,0x00}, // E
+    [70] = {0x7E,0x60,0x60,0x78,0x60,0x60,0x60,0x00}, // F
+    [71] = {0x3C,0x66,0x60,0x6E,0x66,0x66,0x3C,0x00}, // G
+    [72] = {0x66,0x66,0x66,0x7E,0x66,0x66,0x66,0x00}, // H
+    [73] = {0x7E,0x18,0x18,0x18,0x18,0x18,0x7E,0x00}, // I
+    [74] = {0x3E,0x0C,0x0C,0x0C,0x0C,0x6C,0x38,0x00}, // J
+    [75] = {0x66,0x6C,0x78,0x70,0x78,0x6C,0x66,0x00}, // K
+    [76] = {0x60,0x60,0x60,0x60,0x60,0x60,0x7E,0x00}, // L
+    [77] = {0x63,0x77,0x7F,0x6B,0x63,0x63,0x63,0x00}, // M
+    [78] = {0x66,0x76,0x7E,0x7E,0x6E,0x66,0x66,0x00}, // N
+    [79] = {0x3C,0x66,0x66,0x66,0x66,0x66,0x3C,0x00}, // O
+    [80] = {0x7C,0x66,0x66,0x7C,0x60,0x60,0x60,0x00}, // P
+    [81] = {0x3C,0x66,0x66,0x66,0x6E,0x3C,0x06,0x00}, // Q
+    [82] = {0x7C,0x66,0x66,0x7C,0x78,0x6C,0x66,0x00}, // R
+    [83] = {0x3C,0x66,0x60,0x3C,0x06,0x66,0x3C,0x00}, // S
+    [84] = {0x7E,0x18,0x18,0x18,0x18,0x18,0x18,0x00}, // T
+    [85] = {0x66,0x66,0x66,0x66,0x66,0x66,0x3C,0x00}, // U
+    [86] = {0x66,0x66,0x66,0x66,0x66,0x3C,0x18,0x00}, // V
+    [87] = {0x63,0x63,0x63,0x6B,0x7F,0x77,0x63,0x00}, // W
+    [88] = {0x66,0x66,0x3C,0x18,0x3C,0x66,0x66,0x00}, // X
+    [89] = {0x66,0x66,0x66,0x3C,0x18,0x18,0x18,0x00}, // Y
+    [90] = {0x7E,0x06,0x0C,0x18,0x30,0x60,0x7E,0x00}, // Z
+    [97] = {0x00,0x00,0x3C,0x06,0x3E,0x66,0x3E,0x00}, // a
+    [98] = {0x60,0x60,0x7C,0x66,0x66,0x66,0x7C,0x00}, // b
+    [99] = {0x00,0x00,0x3C,0x66,0x60,0x66,0x3C,0x00}, // c
+    [100] = {0x06,0x06,0x3E,0x66,0x66,0x66,0x3E,0x00}, // d
+    [101] = {0x00,0x00,0x3C,0x66,0x7E,0x60,0x3C,0x00}, // e
+    [102] = {0x1C,0x36,0x30,0x7C,0x30,0x30,0x30,0x00}, // f
+    [103] = {0x00,0x3E,0x66,0x66,0x3E,0x06,0x3C,0x00}, // g
+    [104] = {0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0x00}, // h
+    [105] = {0x18,0x00,0x38,0x18,0x18,0x18,0x3C,0x00}, // i
+    [106] = {0x0C,0x00,0x1C,0x0C,0x0C,0x6C,0x38,0x00}, // j
+    [107] = {0x60,0x60,0x66,0x6C,0x78,0x6C,0x66,0x00}, // k
+    [108] = {0x38,0x18,0x18,0x18,0x18,0x18,0x3C,0x00}, // l
+    [109] = {0x00,0x00,0x76,0x7F,0x6B,0x6B,0x63,0x00}, // m
+    [110] = {0x00,0x00,0x7C,0x66,0x66,0x66,0x66,0x00}, // n
+    [111] = {0x00,0x00,0x3C,0x66,0x66,0x66,0x3C,0x00}, // o
+    [112] = {0x00,0x00,0x7C,0x66,0x66,0x7C,0x60,0x60}, // p
+    [113] = {0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x07}, // q
+    [114] = {0x00,0x00,0x6C,0x76,0x60,0x60,0x60,0x00}, // r
+    [115] = {0x00,0x00,0x3E,0x60,0x3C,0x06,0x7C,0x00}, // s
+    [116] = {0x30,0x30,0x7C,0x30,0x30,0x34,0x18,0x00}, // t
+    [117] = {0x00,0x00,0x66,0x66,0x66,0x66,0x3E,0x00}, // u
+    [118] = {0x00,0x00,0x66,0x66,0x66,0x3C,0x18,0x00}, // v
+    [119] = {0x00,0x00,0x63,0x6B,0x6B,0x7F,0x36,0x00}, // w
+    [120] = {0x00,0x00,0x66,0x3C,0x18,0x3C,0x66,0x00}, // x
+    [121] = {0x00,0x00,0x66,0x66,0x3E,0x06,0x3C,0x00}, // y
+    [122] = {0x00,0x00,0x7E,0x0C,0x18,0x30,0x7E,0x00}, // z
+    [33] = {0x18,0x18,0x18,0x18,0x18,0x00,0x18,0x00},  // !
+    [34] = {0x36,0x36,0x36,0x00,0x00,0x00,0x00,0x00},  // "
+    [35] = {0x36,0x36,0x7F,0x36,0x7F,0x36,0x36,0x00},  // #
+    [36] = {0x0C,0x3E,0x03,0x1E,0x30,0x1F,0x0C,0x00},  // $
+    [37] = {0x63,0x33,0x18,0x0C,0x66,0x63,0x00,0x00}, // %
+    [38] = {0x1C,0x36,0x1C,0x6E,0x3B,0x33,0x6E,0x00},  // &
+    [39] = {0x18,0x18,0x18,0x00,0x00,0x00,0x00,0x00}, // '
+    [40] = {0x0C,0x18,0x30,0x30,0x30,0x18,0x0C,0x00},  // (
+    [41] = {0x30,0x18,0x0C,0x0C,0x0C,0x18,0x30,0x00},  // )
+    [42] = {0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00},  // *
+    [43] = {0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00}, // +
+    [44] = {0x00,0x00,0x00,0x00,0x18,0x18,0x30,0x00},  // ,
+    [45] = {0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00}, // -
+    [46] = {0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00},  // .
+    [47] = {0x00,0x03,0x06,0x0C,0x18,0x30,0x60,0x00},  // /
+};
+
+
+static void draw_char(int col, int row, char c) {
+    int x = col * 8;
+    int y = row * 8;
+    const unsigned char *glyph = font[(unsigned char)c];
+    for (int dy = 0; dy < 8; dy++) {
+        unsigned char row_bits = glyph[dy];
+        for (int dx = 0; dx < 8; dx++) {
+            int px = x + dx;
+            int py = y + dy;
+            if (px >= VGA_WIDTH || py >= VGA_HEIGHT) continue;
+            uint32_t color = (row_bits & (0x80 >> dx)) ? 0xFFFFFFFF : 0x00000000;
+            int row_stride = VGA_PITCH / sizeof(uint32_t);
+            vga_buffer[py * row_stride + px] = color;
+        }
     }
 }
 
-void kernel_clear_screen(void) {
+void kernel_scroll_up() {
+    uint32_t *fb = (uint32_t*)vga_buffer;
+    int row_stride = VGA_PITCH / sizeof(uint32_t);
+    int pixel_rows_to_move = VGA_HEIGHT - 8; 
+    
+    memmove(fb, fb + 8 * row_stride, pixel_rows_to_move * row_stride * sizeof(uint32_t));
+    
+    for(int y = pixel_rows_to_move; y < VGA_HEIGHT; y++) {
+        for(int x = 0; x < row_stride; x++) {
+            fb[y * row_stride + x] = 0x00000000;
+        }
+    }
+    term_row = (VGA_HEIGHT / 8) - 1;
+}
+
+void kernel_scroll_down() {
+    uint32_t *fb = (uint32_t*)vga_buffer;
+    int row_stride = VGA_PITCH / sizeof(uint32_t);
+    int pixel_rows_to_move = VGA_HEIGHT - 8;
+    memmove(fb + 8 * row_stride, fb, pixel_rows_to_move * row_stride * sizeof(uint32_t));
+    for(int y = 0; y < 8; y++) {
+        for(int x = 0; x < row_stride; x++) {
+            fb[y * row_stride + x] = 0x00000000;
+        }
+    }
+    term_row = 0;
+}
+
+void kernel_clear_screen() {
+    int row_stride = VGA_PITCH / sizeof(uint32_t);
     for (int y = 0; y < VGA_HEIGHT; y++) {
-        for (int x = 0; x < VGA_WIDTH; x++) {
-            output_buffer[y * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
+        for (int x = 0; x < row_stride; x++) {
+            vga_buffer[y * row_stride + x] = 0x00000000;
         }
     }
     term_row = 0;
     term_col = 0;
-    kernel_flush_buffer();
-}
-
-void kernel_scroll_up(void) {
-    for (int y = 1; y < VGA_HEIGHT; y++) {
-        for (int x = 0; x < VGA_WIDTH; x++) {
-            output_buffer[(y - 1) * VGA_WIDTH + x] = output_buffer[y * VGA_WIDTH + x];
-        }
-    }
-    for (int x = 0; x < VGA_WIDTH; x++) {
-        output_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
-    }
-    if (term_row > 0) term_row--;
-    term_col = 0;
-    kernel_flush_buffer();
-}
-
-void kernel_scroll_down(void) {
-    for (int y = VGA_HEIGHT - 2; y >= 0; y--) {
-        for (int x = 0; x < VGA_WIDTH; x++) {
-            output_buffer[(y + 1) * VGA_WIDTH + x] = output_buffer[y * VGA_WIDTH + x];
-        }
-    }
-    for (int x = 0; x < VGA_WIDTH; x++) {
-        output_buffer[x] = (unsigned short)(term_color << 8) | ' ';
-    }
-    if (term_row < VGA_HEIGHT - 1) term_row++;
-    term_col = 0;
-    kernel_flush_buffer();
-}
-
-void kernel_set_cursor_pos(int col, int row) {
-    if (col < 0) col = 0;
-    if (col >= VGA_WIDTH) col = VGA_WIDTH - 1;
-    if (row < 0) row = 0;
-    if (row >= VGA_HEIGHT) row = VGA_HEIGHT - 1;
-    term_row = row;
-    term_col = col;
 }
 
 void kernel_print_string(const char *str) {
@@ -112,24 +199,24 @@ void kernel_print_string(const char *str) {
         if (*str == '\n') {
             term_col = 0;
             term_row++;
-            if (term_row >= VGA_HEIGHT) {
+            if (term_row >= (VGA_HEIGHT / 8)) {
                 kernel_scroll_up();
             }
             str++;
             continue;
         }
-        output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | *str;
-        term_col++;
-        if (term_col >= VGA_WIDTH) {
+        
+        draw_char(term_col, term_row, *str);
+        
+        if (++term_col >= (VGA_WIDTH / 8)) {
             term_col = 0;
             term_row++;
-            if (term_row >= VGA_HEIGHT) {
+            if (term_row >= (VGA_HEIGHT / 8)) {
                 kernel_scroll_up();
             }
         }
         str++;
     }
-    kernel_flush_buffer();
 }
 
 void kernel_write(int fd, const char *str, int count) {
@@ -137,24 +224,22 @@ void kernel_write(int fd, const char *str, int count) {
         if (fd == STDOUT || fd == STDERR) {
             if (str[i] == '\n') {
                 term_col = 0;
-                term_row++;
-                if (term_row >= VGA_HEIGHT) {
+                if (++term_row >= VGA_HEIGHT / 8) {
                     kernel_scroll_up();
                 }
                 continue;
             }
-            output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | str[i];
-            term_col++;
-            if (term_col >= VGA_WIDTH) {
+            
+            draw_char(term_col, term_row, str[i]);
+            
+            if (++term_col >= VGA_WIDTH / 8) {
                 term_col = 0;
-                term_row++;
-                if (term_row >= VGA_HEIGHT) {
+                if (++term_row >= VGA_HEIGHT / 8) {
                     kernel_scroll_up();
                 }
             }
         }
     }
-    kernel_flush_buffer();
 }
 
 int kernel_read(int fd, char *buf, size_t count) {
@@ -181,88 +266,84 @@ int kernel_read(int fd, char *buf, size_t count) {
     return -1;
 }
 
-void kernel_clean_latest_char(void) {
+void kernel_clean_latest_char() {
     if (term_col > 0) {
         term_col--;
     } else if (term_row > 0) {
         term_row--;
-        term_col = VGA_WIDTH - 1;
+        term_col = (VGA_WIDTH / 8) - 1;
     }
-    output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | ' ';
-    kernel_flush_buffer();
+    
+    int x = term_col * 8;
+    int y = term_row * 8;
+    for (int dy = 0; dy < 8; dy++) {
+        for (int dx = 0; dx < 8; dx++) {
+            vga_buffer[(y + dy) * VGA_WIDTH + (x + dx)] = 0x00000000;
+        }
+    }
 }
 
-void kernel_clean_latest_line(void) {
-    if (term_row > 0) {
-        term_row--;
-    } else {
-        term_row = 0;
+
+void kernel_clean_latest_line() {
+    if (term_row > 0) term_row--;
+    
+    int y_start = term_row * 8;
+    for(int y = y_start; y < y_start + 8; y++) {
+        for(int x = 0; x < VGA_WIDTH; x++) {
+            vga_buffer[y * VGA_WIDTH + x] = 0x00000000;
+        }
     }
-    for (int x = 0; x < VGA_WIDTH; x++) {
-        output_buffer[term_row * VGA_WIDTH + x] = (unsigned short)(term_color << 8) | ' ';
-    }
+    
     term_col = 0;
-    kernel_flush_buffer();
 }
+
 
 void kernel_change_color(char *color) {
-    unsigned char col = 0;
-    if (color == 0) {
-        return;
+    if (!color) return;
+    const struct { char *name; unsigned char id; } colors[] = {
+        {"black", 0x00}, {"blue", 0x01}, {"green", 0x02},
+        {"cyan", 0x03}, {"red", 0x04}, {"magenta", 0x05},
+        {"brown", 0x06}, {"light_gray", 0x07}, {"dark_gray", 0x08},
+        {"light_blue", 0x09}, {"light_green", 0x0A}, {"light_cyan", 0x0B},
+        {"light_red", 0x0C}, {"light_magenta", 0x0D}, {"yellow", 0x0E},
+        {"white", 0x0F}, {0, 0x07}
+    };
+    
+    for (int i = 0; colors[i].name; i++) {
+        if (kernel_strcmp(color, colors[i].name) == 0) {
+            term_color = colors[i].id;
+            return;
+        }
     }
-    if (kernel_strcmp(color, "black") == 0) {
-        col = 0x0;
-    } else if (kernel_strcmp(color, "blue") == 0) {
-        col = 0x1;
-    } else if (kernel_strcmp(color, "green") == 0) {
-        col = 0x2;
-    } else if (kernel_strcmp(color, "cyan") == 0) {
-        col = 0x3;
-    } else if (kernel_strcmp(color, "red") == 0) {
-        col = 0x4;
-    } else if (kernel_strcmp(color, "magenta") == 0) {
-        col = 0x5;
-    } else if (kernel_strcmp(color, "brown") == 0) {
-        col = 0x6;
-    } else if (kernel_strcmp(color, "light_gray") == 0) {
-        col = 0x7;
-    } else if (kernel_strcmp(color, "dark_gray") == 0) {
-        col = 0x8;
-    } else if (kernel_strcmp(color, "light_blue") == 0) {
-        col = 0x9;
-    } else if (kernel_strcmp(color, "light_green") == 0) {
-        col = 0xA;
-    } else if (kernel_strcmp(color, "light_cyan") == 0) {
-        col = 0xB;
-    } else if (kernel_strcmp(color, "light_red") == 0) {
-        col = 0xC;
-    } else if (kernel_strcmp(color, "light_magenta") == 0) {
-        col = 0xD;
-    } else if (kernel_strcmp(color, "yellow") == 0) {
-        col = 0xE;
-    } else if (kernel_strcmp(color, "white") == 0) {
-        col = 0xF;
-    } else {
-        col = 0x7;
-    }
-    term_color = col;
+    term_color = 0x07;
 }
 
 void kernel_reset_color(void) {
     term_color = 0x7;
 }
 
+
 const char spinner_chars[] = {'|', '/', '-', '\\'};
 void kernel_display_spinner(int row, int col, int frame) {
-    char spinner_char = spinner_chars[frame % 4];
+    char c = spinner_chars[frame % 4];
     int saved_row = term_row;
     int saved_col = term_col;
+    
     term_row = row;
     term_col = col;
-    output_buffer[term_row * VGA_WIDTH + term_col] = (unsigned short)(term_color << 8) | spinner_char;
+    
+    int x = col * 8;
+    int y = row * 8;
+    for (int dy = 0; dy < 8; dy++) {
+        for (int dx = 0; dx < 8; dx++) {
+            vga_buffer[(y + dy) * VGA_WIDTH + (x + dx)] = 0x00000000;
+        }
+    }
+    
+    draw_char(col, row, c);
+    
     term_row = saved_row;
     term_col = saved_col;
-    kernel_flush_buffer();
 }
 
 
@@ -581,7 +662,7 @@ typedef struct {
 void kernel_syscall(int code, regs_t *regs) {
     switch (code) {
         case 1:
-            printf("%s", (char *)((void*)regs->eax));
+            kernel_shutdown();
             break;
         case 2:
             break;
@@ -591,6 +672,52 @@ void kernel_syscall(int code, regs_t *regs) {
     }
 }
 
+void init_idt(void);
+void init_pic(void);
 
+struct idt_entry {
+    uint16_t base_low;
+    uint16_t selector;
+    uint8_t zero;
+    uint8_t flags;
+    uint16_t base_high;
+} __attribute__((packed));
+
+struct idt_ptr {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed));
+
+struct idt_entry idt[256] = {0};
+struct idt_ptr idtp = {sizeof(idt) - 1, (uint32_t)&idt};
+
+void init_idt() {
+    asm volatile("lidt %0" : : "m"(idtp));
+}
+
+void exception_handler() {
+    kernel_panic("Unhandled exception!");
+}
+
+static inline void ___outb(uint16_t port, uint8_t value) {
+    asm volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+void init_pic() {
+    ___outb(0x20, 0x11);
+    ___outb(0xA0, 0x11);
+    
+    ___outb(0x21, 0x20);
+    ___outb(0xA1, 0x28);
+    
+    ___outb(0x21, 0x04);
+    ___outb(0xA1, 0x02);
+    
+    ___outb(0x21, 0x01);
+    ___outb(0xA1, 0x01);
+    
+    ___outb(0x21, 0xFF);
+    ___outb(0xA1, 0xFF);
+}
 
 #endif

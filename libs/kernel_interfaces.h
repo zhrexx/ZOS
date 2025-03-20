@@ -5,8 +5,9 @@
 #include "interfaces.h"
 
 void kernel_panic(const char *msg) {
-    printf("Kernel Paniced with message: %s\n", msg);
+    printf("KERNEL PANIC: %s\n", msg);
+    asm volatile("cli; hlt");
+    while (1);
 }
-
 
 #endif // KERNEL_INTERFACES_H

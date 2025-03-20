@@ -1,49 +1,42 @@
 CC = gcc
-CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -Wall -Wextra -Wno-override-init -static 
+CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -Wall -Wextra -Wno-override-init -static -ffreestanding
 ASM = nasm
 ASMFLAGS = -f elf32
+LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
 
-OBJS = boot.o kernel.o
+ISO_DIR = isodir
+BOOT_DIR = $(ISO_DIR)/boot
+GRUB_DIR = $(ISO_DIR)/boot/grub
+OBJS = boot.o kernel.o 
 
 all: os.iso
 
-os.iso: kernel.bin
-	cp kernel.bin os.iso
+os.iso: kernel.elf
+	mkdir -p $(GRUB_DIR)
+	cp kernel.elf $(BOOT_DIR)
+	echo 'menuentry "ZOS" {' > $(GRUB_DIR)/grub.cfg
+	echo '  multiboot /boot/kernel.elf' >> $(GRUB_DIR)/grub.cfg
+	echo '  boot' >> $(GRUB_DIR)/grub.cfg
+	echo '}' >> $(GRUB_DIR)/grub.cfg
+	grub2-mkrescue -o os.iso $(ISO_DIR)
 
-kernel.bin: $(OBJS)
-	ld -m elf_i386 -T linker.ld -o kernel.bin $(OBJS)
+kernel.elf: $(OBJS)
+	ld $(LDFLAGS) -o $@ $^
 
-boot.o: boot.asm
-	$(ASM) $(ASMFLAGS) boot.asm -o boot.o
+%.o: %.asm
+	$(ASM) $(ASMFLAGS) $< -o $@
 
-kernel.o: kernel.c
-	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o *.bin *.iso
+	rm -rf *.o *.elf *.iso $(ISO_DIR)
 
-run: os.iso disk.img # disk_format
-	qemu-system-i386 -kernel kernel.bin -drive file=disk.img,format=raw 
+run: os.iso disk.img
+	qemu-system-i386 -cdrom os.iso -drive file=disk.img,format=raw -boot d -serial stdio -vga std
 
-disk_util:
-	$(CC) disk_util.c -o disk_util
-xam: xam.c
-	$(CC) xam.c -o xam
-
-xfile: xfile.c
-	$(CC) xfile.c -o xfile 
-
-xelf: xelf.c 
-	$(CC) xelf.c -o xelf
-
-xbinr: xbinr.c 
-	$(CC) xbinr.c -o xbinr 
-
-disk_create: disk_util
-	./disk_util create disk.img 10
+disk.img: 
+	./disk_util create disk.img 64
 	./disk_util format disk.img
 
-example: example.xam xam disk_util
-	./xam example.xam example.xbin
-	./disk_util write disk.img example.xbin example.xbin
-
+.PHONY: all clean run
